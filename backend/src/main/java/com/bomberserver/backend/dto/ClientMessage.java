@@ -1,4 +1,4 @@
-package com.example.bomberserver.dto;
+package com.bomberserver.backend.dto;
 
 public class ClientMessage {
     public String type;
