@@ -1,8 +1,8 @@
-package com.example.bomberserver.ws;
+package com.bomberserver.backend.ws;
 
-import com.example.bomberserver.dto.ClientMessage;
-import com.example.bomberserver.dto.ServerMessage;
-import com.example.bomberserver.service.GameRoomService;
+import com.bomberserver.backend.dto.ClientMessage;
+import com.bomberserver.backend.dto.ServerMessage;
+import com.bomberserver.backend.service.GameRoomService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;

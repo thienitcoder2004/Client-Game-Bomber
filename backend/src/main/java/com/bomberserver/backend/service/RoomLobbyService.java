@@ -1,11 +1,11 @@
 package com.bomberserver.backend.service;
 
-import com.example.bomberserver.config.GameConfigProperties;
-import com.example.bomberserver.document.CharacterProfileDocument;
-import com.example.bomberserver.dto.ClientMessage;
-import com.example.bomberserver.dto.ServerMessage;
-import com.example.bomberserver.repository.CharacterProfileRepository;
-import com.example.bomberserver.security.JwtService;
+import com.bomberserver.backend.config.GameConfigProperties;
+import com.bomberserver.backend.document.CharacterProfileDocument;
+import com.bomberserver.backend.dto.ClientMessage;
+import com.bomberserver.backend.dto.ServerMessage;
+import com.bomberserver.backend.repository.CharacterProfileRepository;
+import com.bomberserver.backend.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;

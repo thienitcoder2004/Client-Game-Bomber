@@ -9,7 +9,7 @@ import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.example.bomberserver.repository.UserAccountRepository;
+import com.bomberserver.backend.repository.UserAccountRepository;
 import java.io.IOException;
 
 @Component

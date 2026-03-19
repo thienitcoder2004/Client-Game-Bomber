@@ -1,6 +1,6 @@
 package com.bomberserver.backend.repository;
 
-import com.example.bomberserver.document.UserAccountDocument;
+import com.bomberserver.backend.document.UserAccountDocument;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.Optional;

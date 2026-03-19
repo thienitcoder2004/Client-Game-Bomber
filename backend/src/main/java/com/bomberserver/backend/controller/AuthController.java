@@ -1,9 +1,9 @@
 package com.bomberserver.backend.controller;
 
-import com.example.bomberserver.dto.auth.AuthResponse;
-import com.example.bomberserver.dto.auth.LoginRequest;
-import com.example.bomberserver.dto.auth.RegisterRequest;
-import com.example.bomberserver.service.AuthService;
+import com.bomberserver.backend.dto.auth.AuthResponse;
+import com.bomberserver.backend.dto.auth.LoginRequest;
+import com.bomberserver.backend.dto.auth.RegisterRequest;
+import com.bomberserver.backend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

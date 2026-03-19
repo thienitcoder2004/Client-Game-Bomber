@@ -1,7 +1,7 @@
 package com.bomberserver.backend.controller;
 
-import com.example.bomberserver.document.MatchHistoryDocument;
-import com.example.bomberserver.service.HistoryService;
+import com.bomberserver.backend.document.MatchHistoryDocument;
+import com.bomberserver.backend.service.HistoryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;

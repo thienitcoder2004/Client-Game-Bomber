@@ -1,8 +1,8 @@
 package com.bomberserver.backend.controller;
 
-import com.example.bomberserver.dto.profile.ProfileResponse;
-import com.example.bomberserver.dto.profile.UpdateProfileRequest;
-import com.example.bomberserver.service.ProfileService;
+import com.bomberserver.backend.dto.profile.ProfileResponse;
+import com.bomberserver.backend.dto.profile.UpdateProfileRequest;
+import com.bomberserver.backend.service.ProfileService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;

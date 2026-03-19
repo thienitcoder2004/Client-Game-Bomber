@@ -1,7 +1,7 @@
 package com.bomberserver.backend.config;
 
-import com.example.bomberserver.ws.GameWebSocketHandler;
-import com.example.bomberserver.ws.RoomWebSocketHandler;
+import com.bomberserver.backend.ws.GameWebSocketHandler;
+import com.bomberserver.backend.ws.RoomWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
