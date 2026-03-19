@@ -1,7 +1,7 @@
 package com.bomberserver.backend.ws;
 
-import com.example.bomberserver.dto.ClientMessage;
-import com.example.bomberserver.service.RoomLobbyService;
+import com.bomberserver.backend.dto.ClientMessage;
+import com.bomberserver.backend.service.RoomLobbyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;

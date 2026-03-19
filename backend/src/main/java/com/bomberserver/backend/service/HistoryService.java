@@ -1,7 +1,7 @@
 package com.bomberserver.backend.service;
 
-import com.example.bomberserver.document.MatchHistoryDocument;
-import com.example.bomberserver.repository.MatchHistoryRepository;
+import com.bomberserver.backend.document.MatchHistoryDocument;
+import com.bomberserver.backend.repository.MatchHistoryRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

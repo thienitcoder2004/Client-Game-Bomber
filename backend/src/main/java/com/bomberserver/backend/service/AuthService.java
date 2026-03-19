@@ -1,13 +1,13 @@
 package com.bomberserver.backend.service;
 
-import com.example.bomberserver.document.CharacterProfileDocument;
-import com.example.bomberserver.document.UserAccountDocument;
-import com.example.bomberserver.dto.auth.AuthResponse;
-import com.example.bomberserver.dto.auth.LoginRequest;
-import com.example.bomberserver.dto.auth.RegisterRequest;
-import com.example.bomberserver.repository.CharacterProfileRepository;
-import com.example.bomberserver.repository.UserAccountRepository;
-import com.example.bomberserver.security.JwtService;
+import com.bomberserver.backend.document.CharacterProfileDocument;
+import com.bomberserver.backend.document.UserAccountDocument;
+import com.bomberserver.backend.dto.auth.AuthResponse;
+import com.bomberserver.backend.dto.auth.LoginRequest;
+import com.bomberserver.backend.dto.auth.RegisterRequest;
+import com.bomberserver.backend.repository.CharacterProfileRepository;
+import com.bomberserver.backend.repository.UserAccountRepository;
+import com.bomberserver.backend.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 

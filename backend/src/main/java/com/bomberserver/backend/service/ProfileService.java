@@ -1,11 +1,11 @@
 package com.bomberserver.backend.service;
 
-import com.example.bomberserver.document.CharacterProfileDocument;
-import com.example.bomberserver.document.UserAccountDocument;
-import com.example.bomberserver.dto.profile.ProfileResponse;
-import com.example.bomberserver.dto.profile.UpdateProfileRequest;
-import com.example.bomberserver.repository.CharacterProfileRepository;
-import com.example.bomberserver.repository.UserAccountRepository;
+import com.bomberserver.backend.document.CharacterProfileDocument;
+import com.bomberserver.backend.document.UserAccountDocument;
+import com.bomberserver.backend.dto.profile.ProfileResponse;
+import com.bomberserver.backend.dto.profile.UpdateProfileRequest;
+import com.bomberserver.backend.repository.CharacterProfileRepository;
+import com.bomberserver.backend.repository.UserAccountRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;

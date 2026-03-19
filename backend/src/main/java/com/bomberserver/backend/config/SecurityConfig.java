@@ -1,6 +1,6 @@
 package com.bomberserver.backend.config;
 
-import com.example.bomberserver.security.JwtAuthenticationFilter;
+import com.bomberserver.backend.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
