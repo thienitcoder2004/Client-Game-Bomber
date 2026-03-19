@@ -1,7 +1,79 @@
-import "./App.css";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { getStoredToken } from "./utils/storage";
+import HomePage from "./pages/HomePage";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import CharacterSelectPage from "./pages/CharacterSelectPage";
+import LobbyPage from "./pages/LobbyPage";
+import RoomLobbyPage from "./pages/RoomLobbyPage";
+import HistoryPage from "./pages/HistoryPage";
+import GamePage from "./pages/GamePage";
+import type { JSX } from "react";
 
-function App() {
-  return <></>;
+function ProtectedRoute({ children }: { children: JSX.Element }) {
+  const token = getStoredToken();
+  const location = useLocation();
+
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  return children;
 }
 
-export default App;
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+
+      <Route
+        path="/character"
+        element={
+          <ProtectedRoute>
+            <CharacterSelectPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/lobby"
+        element={
+          <ProtectedRoute>
+            <LobbyPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/rooms"
+        element={
+          <ProtectedRoute>
+            <RoomLobbyPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/history"
+        element={
+          <ProtectedRoute>
+            <HistoryPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/game"
+        element={
+          <ProtectedRoute>
+            <GamePage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
