@@ -2,10 +2,11 @@ package com.bomberserver.backend.controller;
 
 import com.bomberserver.backend.dto.admin.AdminMatchResponse;
 import com.bomberserver.backend.dto.admin.AdminUserResponse;
+import com.bomberserver.backend.service.AdminService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.bomberserver.backend.service.AdminService;
+
 import java.util.List;
 import java.util.Map;
 
@@ -41,10 +42,22 @@ public class AdminController {
     }
 
     @PatchMapping("/users/{userId}/unlock")
-    public ResponseEntity<?> unlockUser(@PathVariable String userId) {
+    public ResponseEntity<?> unlockUser(@PathVariable String userId, Authentication authentication) {
         try {
-            AdminUserResponse user = adminService.unlockUser(userId);
+            String currentAdminId = (String) authentication.getPrincipal();
+            AdminUserResponse user = adminService.unlockUser(userId, currentAdminId);
             return ResponseEntity.ok(user);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/users/{userId}")
+    public ResponseEntity<?> deleteUser(@PathVariable String userId, Authentication authentication) {
+        try {
+            String currentAdminId = (String) authentication.getPrincipal();
+            adminService.deleteUser(userId, currentAdminId);
+            return ResponseEntity.ok(Map.of("message", "Xóa tài khoản thành công"));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }

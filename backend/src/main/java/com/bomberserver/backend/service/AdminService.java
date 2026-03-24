@@ -18,6 +18,8 @@ import java.util.Optional;
 @Service
 public class AdminService {
 
+    private static final String DEFAULT_ADMIN_EMAIL = "admin@gmail.com";
+
     private final UserAccountRepository userAccountRepository;
     private final CharacterProfileRepository characterProfileRepository;
     private final MatchHistoryRepository matchHistoryRepository;
@@ -35,6 +37,7 @@ public class AdminService {
     public List<AdminUserResponse> getUsers() {
         return userAccountRepository.findAll()
                 .stream()
+                .filter(user -> !isDefaultAdmin(user))
                 .sorted(
                         Comparator.comparing(
                                 UserAccountDocument::getCreatedAt,
@@ -49,26 +52,35 @@ public class AdminService {
         UserAccountDocument user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
 
-        if (user.getEmail() != null && user.getEmail().equalsIgnoreCase("admin@gmail.com")) {
-            throw new IllegalArgumentException("Không thể khóa tài khoản admin mặc định");
-        }
-
-        if (user.getId() != null && user.getId().equals(currentAdminId)) {
-            throw new IllegalArgumentException("Bạn không thể tự khóa chính mình");
-        }
+        validateProtectedUser(user, currentAdminId);
 
         user.setActive(false);
         user = userAccountRepository.save(user);
         return toAdminUserResponse(user);
     }
 
-    public AdminUserResponse unlockUser(String userId) {
+    public AdminUserResponse unlockUser(String userId, String currentAdminId) {
         UserAccountDocument user = userAccountRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        validateProtectedUser(user, currentAdminId);
 
         user.setActive(true);
         user = userAccountRepository.save(user);
         return toAdminUserResponse(user);
+    }
+
+    public void deleteUser(String userId, String currentAdminId) {
+        UserAccountDocument user = userAccountRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy user"));
+
+        validateProtectedUser(user, currentAdminId);
+
+        if (user.getId() != null) {
+            characterProfileRepository.deleteByUserId(user.getId());
+        }
+
+        userAccountRepository.delete(user);
     }
 
     public List<AdminMatchResponse> getMatches() {
@@ -80,6 +92,21 @@ public class AdminService {
                 ))
                 .map(this::toAdminMatchResponse)
                 .toList();
+    }
+
+    private void validateProtectedUser(UserAccountDocument user, String currentAdminId) {
+        if (isDefaultAdmin(user)) {
+            throw new IllegalArgumentException("Không thể thao tác tài khoản admin mặc định");
+        }
+
+        if (user.getId() != null && user.getId().equals(currentAdminId)) {
+            throw new IllegalArgumentException("Bạn không thể tự thao tác chính mình");
+        }
+    }
+
+    private boolean isDefaultAdmin(UserAccountDocument user) {
+        return user.getEmail() != null
+                && user.getEmail().equalsIgnoreCase(DEFAULT_ADMIN_EMAIL);
     }
 
     private AdminUserResponse toAdminUserResponse(UserAccountDocument user) {

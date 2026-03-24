@@ -7,15 +7,33 @@ export const adminApi = {
   },
 
   lockUser(userId: string) {
-    return apiFetch<AdminUser>(`/api/admin/users/${userId}/lock`, {
-      method: "PATCH",
-    }, true);
+    return apiFetch<AdminUser>(
+      `/api/admin/users/${userId}/lock`,
+      {
+        method: "PATCH",
+      },
+      true,
+    );
   },
 
   unlockUser(userId: string) {
-    return apiFetch<AdminUser>(`/api/admin/users/${userId}/unlock`, {
-      method: "PATCH",
-    }, true);
+    return apiFetch<AdminUser>(
+      `/api/admin/users/${userId}/unlock`,
+      {
+        method: "PATCH",
+      },
+      true,
+    );
+  },
+
+  deleteUser(userId: string) {
+    return apiFetch<{ message: string }>(
+      `/api/admin/users/${userId}`,
+      {
+        method: "DELETE",
+      },
+      true,
+    );
   },
 
   getMatches() {
