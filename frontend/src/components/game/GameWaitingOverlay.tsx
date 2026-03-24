@@ -8,6 +8,10 @@ type Props = {
   countdownSeconds: number | null;
   players: PlayerState[];
   onLeave: () => void;
+
+  // ===== thêm bot =====
+  canAddBot?: boolean;
+  onAddBot?: () => void;
 };
 
 export default function GameWaitingOverlay({
@@ -17,6 +21,8 @@ export default function GameWaitingOverlay({
   countdownSeconds,
   players,
   onLeave,
+  canAddBot = false,
+  onAddBot,
 }: Props) {
   if (!open) return null;
 
@@ -24,6 +30,8 @@ export default function GameWaitingOverlay({
   const title = waiting
     ? "Đang chờ người chơi..."
     : `Đã đủ người • Bắt đầu sau ${countdownSeconds ?? 0}s`;
+
+  const canStillAddBot = canAddBot && waiting;
 
   return (
     <div
@@ -81,24 +89,65 @@ export default function GameWaitingOverlay({
                   borderRadius: 14,
                   border: "1px solid rgba(255,255,255,0.08)",
                   background: player
-                    ? "rgba(59,130,246,0.12)"
+                    ? player.bot
+                      ? "rgba(168,85,247,0.16)"
+                      : "rgba(59,130,246,0.12)"
                     : "rgba(255,255,255,0.04)",
                 }}
               >
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>
                   Slot {slot}
                 </div>
+
                 <div style={{ color: player ? "#fff" : "#94a3b8" }}>
                   {player
                     ? player.characterName || `Player ${slot}`
                     : "Đang chờ..."}
                 </div>
+
+                {player?.bot && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: "rgba(168,85,247,0.18)",
+                      color: "#e9d5ff",
+                      border: "1px solid rgba(168,85,247,0.28)",
+                    }}
+                  >
+                    BOT
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          {canAddBot && (
+            <Button
+              onClick={onAddBot}
+              disabled={!canStillAddBot}
+              style={{
+                background: "linear-gradient(180deg, #a855f7, #7e22ce)",
+              }}
+            >
+              + Thêm bot
+            </Button>
+          )}
+
           <Button
             onClick={onLeave}
             style={{
@@ -108,6 +157,19 @@ export default function GameWaitingOverlay({
             Rời phòng
           </Button>
         </div>
+
+        {canAddBot && waiting && (
+          <div
+            style={{
+              marginTop: 12,
+              textAlign: "center",
+              color: "#cbd5e1",
+              fontSize: 14,
+            }}
+          >
+            Chủ phòng có thể thêm bot để đủ người và bắt đầu nhanh hơn
+          </div>
+        )}
       </div>
     </div>
   );

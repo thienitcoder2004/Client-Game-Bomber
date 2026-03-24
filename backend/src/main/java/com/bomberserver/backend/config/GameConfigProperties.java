@@ -40,6 +40,9 @@ public class GameConfigProperties {
         return spawn;
     }
 
+    /**
+     * Lấy cooldown di chuyển theo cấp tốc độ hiện tại.
+     */
     public long getMoveCooldownForSpeedLevel(int speedLevel) {
         return switch (speedLevel) {
             case 2 -> timing.getMoveCooldownLevel2Ms();
@@ -50,6 +53,9 @@ public class GameConfigProperties {
         };
     }
 
+    /**
+     * Lấy hàng spawn theo player id.
+     */
     public int getSpawnRowForPlayer(int playerId) {
         return switch (playerId) {
             case 1 -> spawn.getP1Row();
@@ -60,6 +66,9 @@ public class GameConfigProperties {
         };
     }
 
+    /**
+     * Lấy cột spawn theo player id.
+     */
     public int getSpawnColForPlayer(int playerId) {
         return switch (playerId) {
             case 1 -> spawn.getP1Col();
@@ -102,7 +111,7 @@ public class GameConfigProperties {
 
     public static class Player {
         private int startLives = 3;
-        private int startMaxBombs = 1;
+        private int startMaxBombs = 3;
         private int startBombRange = 1;
         private int startSpeedLevel = 1;
         private int maxInventorySize = 5;
@@ -245,6 +254,8 @@ public class GameConfigProperties {
         private long bombFuseMs = 1000;
         private long explosionMs = 350;
         private long invulnerableMs = 1400;
+        private long freezeDurationMs = 3000;
+
         private long moveCooldownLevel1Ms = 160;
         private long moveCooldownLevel2Ms = 135;
         private long moveCooldownLevel3Ms = 110;
@@ -273,6 +284,14 @@ public class GameConfigProperties {
 
         public void setInvulnerableMs(long invulnerableMs) {
             this.invulnerableMs = invulnerableMs;
+        }
+
+        public long getFreezeDurationMs() {
+            return freezeDurationMs;
+        }
+
+        public void setFreezeDurationMs(long freezeDurationMs) {
+            this.freezeDurationMs = freezeDurationMs;
         }
 
         public long getMoveCooldownLevel1Ms() {
@@ -317,7 +336,7 @@ public class GameConfigProperties {
     }
 
     public static class Drop {
-        private double itemRate = 0.35;
+        private double itemRate = 0.50;
 
         public double getItemRate() {
             return itemRate;

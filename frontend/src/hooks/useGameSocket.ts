@@ -2,11 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { GAME_CONFIG } from "../config/gameConfig";
 import { SHAKE_MS } from "../game/constants";
 import { spawnExplosionParticles } from "../game/explosion";
-import {
-  createGameAudio,
-  playBombExplode,
-  playStep,
-} from "../game/audio";
+import { createGameAudio, playBombExplode, playStep } from "../game/audio";
 import type {
   BoardItem,
   BombState,
@@ -31,6 +27,16 @@ function createEmptyBoard(rows: number, cols: number): TileType[][] {
   );
 }
 
+function normalizeBoard(board: number[][]): TileType[][] {
+  return board.map((row) =>
+    row.map((cell) => {
+      if (cell === 1) return 1;
+      if (cell === 2) return 2;
+      return 0;
+    }),
+  );
+}
+
 function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
   return [
     {
@@ -41,6 +47,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       walkFrame: 0,
       lives: GAME_CONFIG.player.startLives,
       invulnerableUntil: 0,
+      frozenUntil: 0,
       inventory: [],
       maxBombs: GAME_CONFIG.player.startMaxBombs,
       bombRange: GAME_CONFIG.player.startBombRange,
@@ -52,6 +59,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 1",
       gender: "MALE",
       avatarCode: "male-default",
+      bot: false,
     },
     {
       id: 2,
@@ -61,6 +69,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       walkFrame: 0,
       lives: GAME_CONFIG.player.startLives,
       invulnerableUntil: 0,
+      frozenUntil: 0,
       inventory: [],
       maxBombs: GAME_CONFIG.player.startMaxBombs,
       bombRange: GAME_CONFIG.player.startBombRange,
@@ -72,6 +81,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 2",
       gender: "FEMALE",
       avatarCode: "female-default",
+      bot: false,
     },
     {
       id: 3,
@@ -81,6 +91,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       walkFrame: 0,
       lives: GAME_CONFIG.player.startLives,
       invulnerableUntil: 0,
+      frozenUntil: 0,
       inventory: [],
       maxBombs: GAME_CONFIG.player.startMaxBombs,
       bombRange: GAME_CONFIG.player.startBombRange,
@@ -92,6 +103,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 3",
       gender: "MALE",
       avatarCode: "male-default",
+      bot: false,
     },
     {
       id: 4,
@@ -101,6 +113,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       walkFrame: 0,
       lives: GAME_CONFIG.player.startLives,
       invulnerableUntil: 0,
+      frozenUntil: 0,
       inventory: [],
       maxBombs: GAME_CONFIG.player.startMaxBombs,
       bombRange: GAME_CONFIG.player.startBombRange,
@@ -112,6 +125,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 4",
       gender: "FEMALE",
       avatarCode: "female-default",
+      bot: false,
     },
   ];
 }
@@ -121,7 +135,10 @@ function getPickupText(item: ItemType) {
   if (item === "FLAME_UP") return "+Flame";
   if (item === "SPEED_UP") return "+Speed";
   if (item === "SHIELD") return "+Shield";
-  return "+Heart";
+  if (item === "HEART") return "+Heart";
+  if (item === "TELEPORT") return "+Warp";
+  if (item === "RANDOM_BOMB") return "+Random";
+  return "+Freeze";
 }
 
 export function useGameSocket(rows: number, cols: number) {
@@ -177,6 +194,9 @@ export function useGameSocket(rows: number, cols: number) {
     const params = new URLSearchParams(window.location.search);
     const roomCode = params.get("roomCode")?.trim();
     const requiredPlayers = params.get("requiredPlayers")?.trim();
+    const humanCount = params.get("humanCount")?.trim();
+    const botCount = params.get("botCount")?.trim();
+    const mode = params.get("mode")?.trim();
 
     const wsBase = GAME_CONFIG.network.wsBaseUrl;
     const query = new URLSearchParams();
@@ -184,6 +204,12 @@ export function useGameSocket(rows: number, cols: number) {
     if (token) query.set("token", token);
     if (roomCode) query.set("roomCode", roomCode);
     if (requiredPlayers) query.set("requiredPlayers", requiredPlayers);
+
+    // ===== rất quan trọng =====
+    // truyền tiếp config room lobby sang game socket
+    if (humanCount) query.set("humanCount", humanCount);
+    if (botCount) query.set("botCount", botCount);
+    if (mode) query.set("mode", mode);
 
     const wsUrl = `${wsBase}/ws/game?${query.toString()}`;
 
@@ -224,7 +250,8 @@ export function useGameSocket(rows: number, cols: number) {
           waitingForPlayers: nextState.waitingForPlayers ?? true,
           gameStarted: nextState.gameStarted ?? false,
           connectedPlayers: nextState.connectedPlayers ?? 0,
-          requiredPlayers: nextState.requiredPlayers ?? GAME_CONFIG.room.defaultRequiredPlayers,
+          requiredPlayers:
+            nextState.requiredPlayers ?? GAME_CONFIG.room.defaultRequiredPlayers,
           countdownSeconds: nextState.countdownSeconds ?? null,
         });
 
@@ -233,16 +260,15 @@ export function useGameSocket(rows: number, cols: number) {
             `Đang chờ đủ người chơi (${nextState.connectedPlayers}/${nextState.requiredPlayers})`,
           );
         } else if (!nextState.gameStarted && nextState.countdownSeconds != null) {
-          setStatusText(`Đã đủ người. Trận bắt đầu sau ${nextState.countdownSeconds}s`);
+          setStatusText(
+            `Đã đủ người. Trận bắt đầu sau ${nextState.countdownSeconds}s`,
+          );
         } else if (nextState.gameStarted && !nextState.gameOver) {
           setStatusText("Trận đấu đang diễn ra");
         }
 
-        const prevExplosionIds = new Set(
-          explosionsRef.current.map((e) => e.id),
-        );
-
-        const newExplosions = nextState.explosions.filter(
+        const prevExplosionIds = new Set(explosionsRef.current.map((e) => e.id));
+        const newExplosions = (nextState.explosions ?? []).filter(
           (e) => !prevExplosionIds.has(e.id),
         );
 
@@ -254,34 +280,42 @@ export function useGameSocket(rows: number, cols: number) {
           playBombExplode(audioRef.current);
         }
 
-        const nextPlayers: PlayerState[] = nextState.players.map((remotePlayer) => {
-          const prevPlayer = prevPlayersMapRef.current.get(remotePlayer.id);
-          const moved =
-            !!prevPlayer &&
-            (prevPlayer.row !== remotePlayer.row ||
-              prevPlayer.col !== remotePlayer.col);
+        const nextPlayers: PlayerState[] = (nextState.players ?? []).map(
+          (remotePlayer) => {
+            const prevPlayer = prevPlayersMapRef.current.get(remotePlayer.id);
+            const moved =
+              !!prevPlayer &&
+              (prevPlayer.row !== remotePlayer.row ||
+                prevPlayer.col !== remotePlayer.col);
 
-          return {
-            id: remotePlayer.id,
-            row: remotePlayer.row,
-            col: remotePlayer.col,
-            dir: (remotePlayer.direction as Direction) ?? prevPlayer?.dir ?? "down",
-            walkFrame: moved ? (prevPlayer?.walkFrame === 1 ? 0 : 1) : 0,
-            lives: remotePlayer.lives,
-            invulnerableUntil: remotePlayer.invulnerableUntil ?? 0,
-            inventory: remotePlayer.inventory ?? [],
-            maxBombs: remotePlayer.maxBombs ?? 1,
-            bombRange: remotePlayer.bombRange ?? 1,
-            speedLevel: remotePlayer.speedLevel ?? 1,
-            bombsPlaced: remotePlayer.bombsPlaced ?? 0,
-            kills: remotePlayer.kills ?? 0,
-            deaths: remotePlayer.deaths ?? 0,
-            ovr: remotePlayer.ovr ?? 0,
-            characterName: remotePlayer.characterName || `Player ${remotePlayer.id}`,
-            gender: remotePlayer.gender || "",
-            avatarCode: remotePlayer.avatarCode || "",
-          };
-        });
+            return {
+              id: remotePlayer.id,
+              row: remotePlayer.row,
+              col: remotePlayer.col,
+              dir:
+                (remotePlayer.direction as Direction) ??
+                prevPlayer?.dir ??
+                "down",
+              walkFrame: moved ? (prevPlayer?.walkFrame === 1 ? 0 : 1) : 0,
+              lives: remotePlayer.lives,
+              invulnerableUntil: remotePlayer.invulnerableUntil ?? 0,
+              frozenUntil: remotePlayer.frozenUntil ?? 0,
+              inventory: remotePlayer.inventory ?? [],
+              maxBombs: remotePlayer.maxBombs ?? 1,
+              bombRange: remotePlayer.bombRange ?? 1,
+              speedLevel: remotePlayer.speedLevel ?? 1,
+              bombsPlaced: remotePlayer.bombsPlaced ?? 0,
+              kills: remotePlayer.kills ?? 0,
+              deaths: remotePlayer.deaths ?? 0,
+              ovr: remotePlayer.ovr ?? 0,
+              characterName:
+                remotePlayer.characterName || `Player ${remotePlayer.id}`,
+              gender: remotePlayer.gender || "",
+              avatarCode: remotePlayer.avatarCode || "",
+              bot: remotePlayer.bot ?? false,
+            };
+          },
+        );
 
         const myId = playerIdRef.current;
         if (myId != null) {
@@ -313,15 +347,17 @@ export function useGameSocket(rows: number, cols: number) {
             });
           }
 
-          if (nextMe) {
+          if (nextMe && nextMe.frozenUntil > now) {
+            setStatusText("Bạn đang bị đóng băng...");
+          } else if (nextMe) {
             setPlayerLabel(`Bạn là ${nextMe.characterName}`);
           }
         }
 
-        boardRef.current = nextState.board;
+        boardRef.current = normalizeBoard(nextState.board ?? []);
         playersRef.current = nextPlayers;
-        bombsRef.current = nextState.bombs;
-        explosionsRef.current = nextState.explosions;
+        bombsRef.current = nextState.bombs ?? [];
+        explosionsRef.current = nextState.explosions ?? [];
         itemsRef.current = nextState.items ?? [];
         prevPlayersMapRef.current = new Map(nextPlayers.map((p) => [p.id, p]));
 

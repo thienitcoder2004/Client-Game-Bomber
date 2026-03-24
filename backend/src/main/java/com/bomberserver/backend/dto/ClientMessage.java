@@ -9,4 +9,7 @@ public class ClientMessage {
     public String roomName;
     public Integer maxPlayers;
     public Boolean isPrivate;
+
+    // dùng cho kick member / remove bot
+    public String targetClientId;
 }

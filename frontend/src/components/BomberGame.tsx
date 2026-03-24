@@ -57,7 +57,6 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
     };
   }, []);
 
-  // Chỉ giữ 1 effect resize/orientationchange
   useEffect(() => {
     const updateViewport = () => {
       const nextWidth = window.innerWidth;
@@ -68,7 +67,6 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
         height: nextHeight,
       });
 
-      // Khi đã xoay ngang thì tắt cờ cho phép chơi dọc
       if (nextWidth >= nextHeight && allowPortraitPlay) {
         setAllowPortraitPlay(false);
       }
@@ -84,6 +82,13 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
     };
   }, [allowPortraitPlay]);
 
+  const searchParams = useMemo(() => {
+    if (typeof window === "undefined") {
+      return new URLSearchParams();
+    }
+    return new URLSearchParams(window.location.search);
+  }, []);
+
   const isTouchDevice = useMemo(() => {
     if (typeof window === "undefined" || typeof navigator === "undefined") {
       return false;
@@ -97,6 +102,9 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
 
   const isMobileLayout = isTouchDevice || viewport.width <= 1024;
   const isLandscape = viewport.width >= viewport.height;
+
+  const isCustomRoom =
+    searchParams.get("mode") === "room" && !!searchParams.get("roomCode");
 
   const fitScale = useMemo(() => {
     if (!isMobileLayout) return 1;
@@ -124,6 +132,15 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
     refs.playerIdRef.current != null &&
     !refs.gameOverRef.current &&
     refs.gameStartedRef.current;
+
+  // ===== QUAN TRỌNG =====
+  // Trong room mode, bot đã được thêm ở room lobby rồi,
+  // nên KHÔNG cho thêm lại trong màn game waiting overlay.
+  const canAddBot = false;
+
+  const handleAddBot = () => {
+    sendWs({ type: "add_bot" });
+  };
 
   const sendRestart = () => {
     sendWs({ type: "restart" });
@@ -180,6 +197,8 @@ export default function BomberGame({ backPath = "/lobby" }: Props) {
           countdownSeconds={roomState.countdownSeconds}
           players={refs.playersRef.current}
           onLeave={() => navigate(backPath)}
+          canAddBot={isCustomRoom ? false : canAddBot}
+          onAddBot={handleAddBot}
         />
 
         <GameResultModal

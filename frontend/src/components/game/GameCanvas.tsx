@@ -77,6 +77,9 @@ export default function GameCanvas({
     let raf = 0;
     let lastFrame = performance.now();
 
+    /**
+     * Cập nhật particle mỗi frame.
+     */
     const updateParticles = (delta: number) => {
       for (const p of particlesRef.current) {
         p.x += p.vx * delta * 0.06;
@@ -89,6 +92,9 @@ export default function GameCanvas({
       particlesRef.current = particlesRef.current.filter((p) => p.life > 0);
     };
 
+    /**
+     * Main render loop.
+     */
     const loop = (frameNow: number) => {
       const delta = frameNow - lastFrame;
       lastFrame = frameNow;
@@ -100,13 +106,15 @@ export default function GameCanvas({
       }
 
       const me = playersRef.current.find((p) => p.id === playerIdRef.current);
-
       const moveInterval = getMoveCooldownBySpeedLevel(me?.speedLevel);
-
       const direction = getDirectionFromKeys();
 
+      const isFrozen = !!me && worldNow < me.frozenUntil;
+
+      // Nếu bị đóng băng thì không gửi move lên server nữa
       if (
         !gameOverRef.current &&
+        !isFrozen &&
         direction &&
         worldNow - lastMoveSentAtRef.current >= moveInterval
       ) {

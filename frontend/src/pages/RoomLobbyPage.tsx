@@ -32,6 +32,9 @@ export default function RoomLobbyPage() {
     startRoom,
     refreshRooms,
     lastStartedRoomInfo,
+    addBot,
+    removeBot,
+    kickMember,
   } = useRoomLobbySocket();
 
   const [search, setSearch] = useState("");
@@ -42,13 +45,19 @@ export default function RoomLobbyPage() {
   const [maxPlayers, setMaxPlayers] = useState<number>(getDefaultRoomSize());
   const [isPrivate, setIsPrivate] = useState(false);
 
+  // =====================================================
+  // Khi chủ phòng bấm Chơi, truyền roomCode / maxPlayers /
+  // humanCount / botCount sang màn game
+  // =====================================================
   useEffect(() => {
     if (!lastStartedRoomInfo) return;
 
     navigate(
-      `/game?mode=room&roomCode=${encodeURIComponent(
-        lastStartedRoomInfo.roomCode,
-      )}&requiredPlayers=${lastStartedRoomInfo.maxPlayers}`,
+      `/game?mode=room` +
+        `&roomCode=${encodeURIComponent(lastStartedRoomInfo.roomCode)}` +
+        `&requiredPlayers=${lastStartedRoomInfo.maxPlayers}` +
+        `&humanCount=${lastStartedRoomInfo.humanCount}` +
+        `&botCount=${lastStartedRoomInfo.botCount}`,
       { replace: true },
     );
   }, [lastStartedRoomInfo, navigate]);
@@ -72,6 +81,12 @@ export default function RoomLobbyPage() {
     setMaxPlayers(getDefaultRoomSize());
     setIsPrivate(false);
   };
+
+  const canAddBot =
+    !!currentRoom &&
+    currentRoom.isHost &&
+    currentRoom.playerCount < currentRoom.maxPlayers &&
+    currentRoom.status !== "PLAYING";
 
   return (
     <div
@@ -176,7 +191,7 @@ export default function RoomLobbyPage() {
                 label="Nhập mã phòng"
                 value={roomCodeInput}
                 onChange={setRoomCodeInput}
-                placeholder="Ví dụ: R1234"
+                placeholder="Ví dụ: #1234"
               />
               <Button
                 onClick={() => joinRoom(roomCodeInput.trim().toUpperCase())}
@@ -274,42 +289,134 @@ export default function RoomLobbyPage() {
                 marginBottom: 18,
               }}
             >
-              {currentRoom.members.map((member) => (
-                <div
-                  key={member.clientId}
-                  style={{
-                    padding: 14,
-                    borderRadius: 16,
-                    background: member.host
-                      ? "rgba(34,197,94,0.10)"
-                      : "rgba(255,255,255,0.05)",
-                    border: member.host
-                      ? "1px solid rgba(34,197,94,0.18)"
-                      : "1px solid rgba(255,255,255,0.06)",
-                  }}
-                >
-                  <div style={{ color: "#fff", fontWeight: 800 }}>
-                    {member.characterName}
+              {currentRoom.members.map((member) => {
+                const isBot = Boolean(member.bot);
+                const canRemoveThisBot =
+                  currentRoom.isHost &&
+                  isBot &&
+                  currentRoom.status === "WAITING";
+
+                const canKickThisMember =
+                  currentRoom.isHost &&
+                  !isBot &&
+                  !member.host &&
+                  currentRoom.status === "WAITING";
+
+                return (
+                  <div
+                    key={member.clientId}
+                    style={{
+                      padding: 14,
+                      borderRadius: 16,
+                      background: member.host
+                        ? "rgba(34,197,94,0.10)"
+                        : isBot
+                          ? "rgba(168,85,247,0.14)"
+                          : "rgba(255,255,255,0.05)",
+                      border: member.host
+                        ? "1px solid rgba(34,197,94,0.18)"
+                        : isBot
+                          ? "1px solid rgba(168,85,247,0.26)"
+                          : "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <div style={{ color: "#fff", fontWeight: 800 }}>
+                      {member.characterName}
+                    </div>
+
+                    <div
+                      style={{ color: "#94a3b8", marginTop: 5, fontSize: 13 }}
+                    >
+                      {member.host ? "Chủ phòng" : isBot ? "Bot" : "Người chơi"}
+                    </div>
+
+                    {isBot && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          background: "rgba(168,85,247,0.18)",
+                          color: "#e9d5ff",
+                          border: "1px solid rgba(168,85,247,0.28)",
+                        }}
+                      >
+                        BOT
+                      </div>
+                    )}
+
+                    {(canRemoveThisBot || canKickThisMember) && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {canRemoveThisBot && (
+                          <Button
+                            onClick={() => removeBot(member.clientId)}
+                            style={{
+                              background:
+                                "linear-gradient(180deg, #f97316, #ea580c)",
+                              boxShadow: "none",
+                              padding: "10px 14px",
+                            }}
+                          >
+                            Xóa bot
+                          </Button>
+                        )}
+
+                        {canKickThisMember && (
+                          <Button
+                            onClick={() => kickMember(member.clientId)}
+                            style={{
+                              background:
+                                "linear-gradient(180deg, #ef4444, #dc2626)",
+                              boxShadow: "none",
+                              padding: "10px 14px",
+                            }}
+                          >
+                            Mời ra
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ color: "#94a3b8", marginTop: 5, fontSize: 13 }}>
-                    {member.host ? "Chủ phòng" : "Người chơi"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {currentRoom.isHost && (
-                <Button
-                  onClick={startRoom}
-                  disabled={!currentRoom.canStart}
-                  style={{
-                    background: "linear-gradient(180deg, #22c55e, #16a34a)",
-                    boxShadow: "0 12px 28px rgba(22,163,74,0.30)",
-                  }}
-                >
-                  ▶ Chơi
-                </Button>
+                <>
+                  <Button
+                    onClick={addBot}
+                    disabled={!canAddBot}
+                    style={{
+                      background: "linear-gradient(180deg, #a855f7, #7e22ce)",
+                      boxShadow: "0 12px 28px rgba(126,34,206,0.30)",
+                    }}
+                  >
+                    + Thêm bot
+                  </Button>
+
+                  <Button
+                    onClick={startRoom}
+                    disabled={!currentRoom.canStart}
+                    style={{
+                      background: "linear-gradient(180deg, #22c55e, #16a34a)",
+                      boxShadow: "0 12px 28px rgba(22,163,74,0.30)",
+                    }}
+                  >
+                    ▶ Chơi
+                  </Button>
+                </>
               )}
 
               <Button
@@ -322,6 +429,15 @@ export default function RoomLobbyPage() {
                 Rời phòng
               </Button>
             </div>
+
+            {currentRoom.isHost &&
+              currentRoom.playerCount < currentRoom.maxPlayers && (
+                <div
+                  style={{ marginTop: 12, color: "#cbd5e1", lineHeight: 1.6 }}
+                >
+                  Chủ phòng có thể thêm bot để đủ người nhanh hơn.
+                </div>
+              )}
 
             {!currentRoom.canStart && currentRoom.isHost && (
               <div style={{ marginTop: 12, color: "#fbbf24", lineHeight: 1.6 }}>
@@ -552,9 +668,7 @@ export default function RoomLobbyPage() {
                 </div>
                 <select
                   value={maxPlayers}
-                  onChange={(e) =>
-                    setMaxPlayers(Number(e.target.value))
-                  }
+                  onChange={(e) => setMaxPlayers(Number(e.target.value))}
                   style={{
                     width: "100%",
                     padding: "13px 14px",

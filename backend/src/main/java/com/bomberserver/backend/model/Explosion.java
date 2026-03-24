@@ -12,10 +12,24 @@ public class Explosion {
     public long duration;
     public List<FlameCell> cells = new ArrayList<>();
 
+    // để client biết vụ nổ này là bom random hay bom băng
+    public boolean randomPattern;
+    public boolean freezeEffect;
+
     public Explosion() {
     }
 
-    public Explosion(String id, int ownerId, int row, int col, long startedAt, long duration, List<FlameCell> cells) {
+    public Explosion(
+            String id,
+            int ownerId,
+            int row,
+            int col,
+            long startedAt,
+            long duration,
+            List<FlameCell> cells,
+            boolean randomPattern,
+            boolean freezeEffect
+    ) {
         this.id = id;
         this.ownerId = ownerId;
         this.row = row;
@@ -23,5 +37,7 @@ public class Explosion {
         this.startedAt = startedAt;
         this.duration = duration;
         this.cells = cells;
+        this.randomPattern = randomPattern;
+        this.freezeEffect = freezeEffect;
     }
 }

@@ -84,17 +84,53 @@ export function useRoomLobbySocket() {
     };
   }, []);
 
+  const refreshRooms = () => send({ type: "list_rooms" });
+
+  const createRoom = (
+    roomName: string,
+    maxPlayers: number,
+    isPrivate: boolean,
+  ) => {
+    send({ type: "create_room", roomName, maxPlayers, isPrivate });
+  };
+
+  const joinRoom = (roomCode: string) => {
+    send({ type: "join_room", roomCode });
+  };
+
+  const leaveRoom = () => {
+    send({ type: "leave_room" });
+  };
+
+  const startRoom = () => {
+    send({ type: "start_room" });
+  };
+
+  const addBot = () => {
+    send({ type: "add_bot" });
+  };
+
+  const removeBot = (targetClientId: string) => {
+    send({ type: "remove_bot", targetClientId });
+  };
+
+  const kickMember = (targetClientId: string) => {
+    send({ type: "kick_member", targetClientId });
+  };
+
   return {
     connected,
     statusText,
     rooms,
     currentRoom,
     lastStartedRoomInfo,
-    refreshRooms: () => send({ type: "list_rooms" }),
-    createRoom: (roomName: string, maxPlayers: number, isPrivate: boolean) =>
-      send({ type: "create_room", roomName, maxPlayers, isPrivate }),
-    joinRoom: (roomCode: string) => send({ type: "join_room", roomCode }),
-    leaveRoom: () => send({ type: "leave_room" }),
-    startRoom: () => send({ type: "start_room" }),
+    refreshRooms,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    startRoom,
+    addBot,
+    removeBot,
+    kickMember,
   };
 }

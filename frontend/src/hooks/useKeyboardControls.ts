@@ -33,6 +33,8 @@ export function useKeyboardControls({
         "KeyA",
         "KeyS",
         "KeyD",
+        "KeyQ",
+        "KeyE",
         "Digit1",
         "Digit2",
         "Digit3",
@@ -65,6 +67,16 @@ export function useKeyboardControls({
 
       lastInputAtRef.current = now;
       heldKeysRef.current.add(e.code);
+
+      if (e.code === "KeyQ" && !e.repeat) {
+        sendWs({ type: "skill_bomb" });
+        return;
+      }
+
+      if (e.code === "KeyE" && !e.repeat) {
+        sendWs({ type: "skill_speed" });
+        return;
+      }
 
       if (slotMap[e.code] !== undefined && !e.repeat) {
         sendWs({
