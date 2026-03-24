@@ -52,6 +52,7 @@ export default function CharacterSelectPage() {
         gender: res.gender,
         avatarCode: res.avatarCode,
         profileCompleted: res.profileCompleted,
+        role: res.role,
       });
 
       setMessage("Lưu nhân vật thành công");
