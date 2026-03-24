@@ -107,6 +107,23 @@ export default function AdminPage() {
     }
   };
 
+  const onDelete = async (userId: string) => {
+    const ok = window.confirm(
+      "Bạn có chắc muốn xóa tài khoản này không? Hành động này không thể hoàn tác.",
+    );
+    if (!ok) return;
+
+    try {
+      setWorkingUserId(userId);
+      await adminApi.deleteUser(userId);
+      setUsers((prev) => prev.filter((item) => item.id !== userId));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Xóa tài khoản thất bại");
+    } finally {
+      setWorkingUserId(null);
+    }
+  };
+
   if (authLoading || loading) {
     return <Loading text="Đang tải trang admin..." />;
   }
@@ -170,7 +187,7 @@ export default function AdminPage() {
                   fontSize: 16,
                 }}
               >
-                Xem danh sách tài khoản, khóa hoặc mở khóa người chơi và theo
+                Xem danh sách tài khoản, khóa, mở khóa, xóa người chơi và theo
                 dõi lịch sử trận đấu.
               </p>
             </div>
@@ -236,7 +253,7 @@ export default function AdminPage() {
             <table
               style={{
                 width: "100%",
-                minWidth: 980,
+                minWidth: 1120,
                 borderCollapse: "collapse",
               }}
             >
@@ -255,8 +272,6 @@ export default function AdminPage() {
               <tbody>
                 {sortedUsers.map((user) => {
                   const isProcessing = workingUserId === user.id;
-                  const isDefaultAdmin =
-                    user.email?.toLowerCase() === "admin@gmail.com";
 
                   return (
                     <tr key={user.id}>
@@ -288,33 +303,50 @@ export default function AdminPage() {
                       </td>
                       <td style={tdStyle}>{formatDate(user.createdAt)}</td>
                       <td style={tdStyle}>
-                        {user.active ? (
+                        <div
+                          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+                        >
+                          {user.active ? (
+                            <Button
+                              onClick={() => onLock(user.id)}
+                              disabled={isProcessing}
+                              style={{
+                                padding: "10px 14px",
+                                background:
+                                  "linear-gradient(180deg, #ef4444, #dc2626)",
+                                boxShadow: "0 12px 28px rgba(220,38,38,0.28)",
+                              }}
+                            >
+                              {isProcessing ? "Đang khóa..." : "Khóa"}
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={() => onUnlock(user.id)}
+                              disabled={isProcessing}
+                              style={{
+                                padding: "10px 14px",
+                                background:
+                                  "linear-gradient(180deg, #22c55e, #15803d)",
+                                boxShadow: "0 12px 28px rgba(21,128,61,0.28)",
+                              }}
+                            >
+                              {isProcessing ? "Đang mở..." : "Mở khóa"}
+                            </Button>
+                          )}
+
                           <Button
-                            onClick={() => onLock(user.id)}
-                            disabled={isProcessing || isDefaultAdmin}
-                            style={{
-                              padding: "10px 14px",
-                              background:
-                                "linear-gradient(180deg, #ef4444, #dc2626)",
-                              boxShadow: "0 12px 28px rgba(220,38,38,0.28)",
-                            }}
-                          >
-                            {isProcessing ? "Đang khóa..." : "Khóa"}
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={() => onUnlock(user.id)}
+                            onClick={() => onDelete(user.id)}
                             disabled={isProcessing}
                             style={{
                               padding: "10px 14px",
                               background:
-                                "linear-gradient(180deg, #22c55e, #15803d)",
-                              boxShadow: "0 12px 28px rgba(21,128,61,0.28)",
+                                "linear-gradient(180deg, #7f1d1d, #991b1b)",
+                              boxShadow: "0 12px 28px rgba(127,29,29,0.28)",
                             }}
                           >
-                            {isProcessing ? "Đang mở..." : "Mở khóa"}
+                            {isProcessing ? "Đang xử lý..." : "Xóa"}
                           </Button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );

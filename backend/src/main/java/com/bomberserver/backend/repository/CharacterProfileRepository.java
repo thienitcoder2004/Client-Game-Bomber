@@ -8,6 +8,10 @@ import java.util.Optional;
 
 public interface CharacterProfileRepository extends MongoRepository<CharacterProfileDocument, String> {
     Optional<CharacterProfileDocument> findByUserId(String userId);
+
     boolean existsByCharacterNameIgnoreCase(String characterName);
+
     List<CharacterProfileDocument> findTop20ByCharacterNameContainingIgnoreCase(String characterName);
+
+    void deleteByUserId(String userId);
 }
