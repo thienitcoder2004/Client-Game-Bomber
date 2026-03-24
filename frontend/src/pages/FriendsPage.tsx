@@ -32,6 +32,8 @@ const badgeStyle: CSSProperties = {
   fontWeight: 700,
 };
 
+const RECALL_WINDOW_MS = 5 * 60 * 1000;
+
 export default function FriendsPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -50,11 +52,28 @@ export default function FriendsPage() {
   );
   const [messageInput, setMessageInput] = useState("");
   const [pageStatus, setPageStatus] = useState("Sẵn sàng");
+  const [, forceTick] = useState(0);
 
-  const { connected, statusText, messages, setMessages, sendMessage } =
-    useFriendChatSocket(selectedFriend?.user.userId);
+  const {
+    connected,
+    statusText,
+    messages,
+    setMessages,
+    sendMessage,
+    recallMessage,
+    friendEventVersion,
+    lastFriendEvent,
+  } = useFriendChatSocket(selectedFriend?.user.userId);
 
   const selectedFriendId = selectedFriend?.user.userId;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      forceTick((v) => v + 1);
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const sortedMessages = useMemo(() => {
     if (!selectedFriendId) return [];
@@ -124,6 +143,7 @@ export default function FriendsPage() {
 
   useEffect(() => {
     if (!selectedFriendId) {
+      setMessages([]);
       return;
     }
 
@@ -153,6 +173,80 @@ export default function FriendsPage() {
       cancelled = true;
     };
   }, [selectedFriendId, setMessages]);
+
+  useEffect(() => {
+    if (friendEventVersion === 0) return;
+
+    let cancelled = false;
+
+    const refreshRealtimeData = async () => {
+      try {
+        const [friendItems, incomingItems, outgoingItems] = await Promise.all([
+          friendApi.getFriends(),
+          friendApi.getIncomingRequests(),
+          friendApi.getOutgoingRequests(),
+        ]);
+
+        if (cancelled) return;
+
+        setFriends(friendItems);
+        setIncomingRequests(incomingItems);
+        setOutgoingRequests(outgoingItems);
+
+        if (keyword.trim()) {
+          const result = await friendApi.search(keyword.trim());
+          if (cancelled) return;
+          setSearchResults(result);
+        }
+
+        if (selectedFriendId) {
+          const updatedSelectedFriend = friendItems.find(
+            (item) => item.user.userId === selectedFriendId,
+          );
+
+          if (!updatedSelectedFriend) {
+            setSelectedFriend(null);
+            setMessages([]);
+            return;
+          }
+
+          setSelectedFriend(updatedSelectedFriend);
+        }
+
+        if (lastFriendEvent?.event === "friend_request_received") {
+          setPageStatus("Bạn vừa nhận được một lời mời kết bạn");
+        } else if (lastFriendEvent?.event === "friendship_accepted") {
+          setPageStatus("Đã cập nhật kết bạn realtime");
+        } else if (lastFriendEvent?.event === "friend_request_removed") {
+          setPageStatus("Lời mời kết bạn đã được cập nhật");
+        } else if (lastFriendEvent?.event === "friend_removed") {
+          setPageStatus("Danh sách bạn bè đã được cập nhật");
+        } else if (lastFriendEvent?.event === "friend_presence_changed") {
+          setPageStatus("Trạng thái online bạn bè đã được cập nhật");
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        setPageStatus(
+          error instanceof Error
+            ? error.message
+            : "Không thể cập nhật dữ liệu realtime",
+        );
+      }
+    };
+
+    void refreshRealtimeData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    friendEventVersion,
+    keyword,
+    selectedFriendId,
+    setMessages,
+    lastFriendEvent,
+  ]);
 
   const handleSearch = async () => {
     if (!keyword.trim()) {
@@ -230,9 +324,12 @@ export default function FriendsPage() {
 
   const handleSendChat = () => {
     if (!selectedFriendId || !messageInput.trim()) return;
-
     sendMessage(selectedFriendId, messageInput.trim());
     setMessageInput("");
+  };
+
+  const handleRecall = (messageId: string) => {
+    recallMessage(messageId);
   };
 
   return (
@@ -364,8 +461,7 @@ export default function FriendsPage() {
                       >
                         Kết bạn
                       </Button>
-                    ) : item.relationshipStatus === "PENDING_IN" &&
-                      item.requestId ? (
+                    ) : item.relationshipStatus === "PENDING_IN" ? (
                       <div
                         style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
                       >
@@ -512,7 +608,13 @@ export default function FriendsPage() {
             </div>
           </Card>
 
-          <Card style={{ minHeight: 760 }}>
+          <Card
+            style={{
+              minHeight: 760,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <div
               style={{
                 display: "flex",
@@ -553,6 +655,7 @@ export default function FriendsPage() {
 
             <div
               style={{
+                flex: 1,
                 minHeight: 520,
                 maxHeight: 520,
                 overflowY: "auto",
@@ -560,7 +663,8 @@ export default function FriendsPage() {
                 border: "1px solid rgba(255,255,255,0.08)",
                 background: "rgba(2,6,23,0.55)",
                 padding: 14,
-                display: "grid",
+                display: "flex",
+                flexDirection: "column",
                 gap: 10,
               }}
             >
@@ -574,6 +678,8 @@ export default function FriendsPage() {
                     key={item.id + item.createdAt}
                     mine={item.senderId === profile?.userId}
                     message={item}
+                    canRecall={canRecallMessage(item, profile?.userId)}
+                    onRecall={handleRecall}
                   />
                 ))
               )}
@@ -638,6 +744,20 @@ export default function FriendsPage() {
       </div>
     </div>
   );
+}
+
+function canRecallMessage(
+  message: FriendChatMessage,
+  currentUserId?: string,
+): boolean {
+  if (!currentUserId) return false;
+  if (message.senderId !== currentUserId) return false;
+  if (message.recalled) return false;
+
+  const createdAt = new Date(message.createdAt).getTime();
+  const now = Date.now();
+
+  return now - createdAt <= RECALL_WINDOW_MS;
 }
 
 function SectionTitle({ text }: { text: string }) {
@@ -716,37 +836,91 @@ function UserCard({
 function ChatBubble({
   mine,
   message,
+  canRecall,
+  onRecall,
 }: {
   mine: boolean;
   message: FriendChatMessage;
+  canRecall: boolean;
+  onRecall: (messageId: string) => void;
 }) {
+  const wrapperStyle: CSSProperties = {
+    display: "flex",
+    justifyContent: mine ? "flex-end" : "flex-start",
+    alignItems: "flex-start",
+    width: "100%",
+  };
+
+  const bubbleStyle: CSSProperties = {
+    display: "inline-flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    width: "fit-content",
+    maxWidth: "72%",
+    minWidth: 64,
+    padding: "12px 14px",
+    borderRadius: 18,
+    background: message.recalled
+      ? "rgba(148,163,184,0.16)"
+      : mine
+        ? "linear-gradient(180deg, #2563eb, #1d4ed8)"
+        : "rgba(255,255,255,0.08)",
+    color: "#fff",
+    border: message.recalled
+      ? "1px solid rgba(148,163,184,0.20)"
+      : mine
+        ? "1px solid rgba(59,130,246,0.35)"
+        : "1px solid rgba(255,255,255,0.08)",
+    boxSizing: "border-box",
+    overflowWrap: "anywhere",
+    wordBreak: "break-word",
+    whiteSpace: "pre-wrap",
+  };
+
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: mine ? "flex-end" : "flex-start",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "78%",
-          padding: "12px 14px",
-          borderRadius: 16,
-          background: mine
-            ? "linear-gradient(180deg, #2563eb, #1d4ed8)"
-            : "rgba(255,255,255,0.08)",
-          color: "#fff",
-          border: mine
-            ? "1px solid rgba(59,130,246,0.35)"
-            : "1px solid rgba(255,255,255,0.08)",
-        }}
-      >
-        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-          {message.content}
+    <div style={wrapperStyle}>
+      <div style={bubbleStyle}>
+        <div
+          style={{
+            lineHeight: 1.6,
+            fontStyle: message.recalled ? "italic" : "normal",
+            color: message.recalled ? "#cbd5e1" : "#fff",
+          }}
+        >
+          {message.recalled ? "Tin nhắn đã được thu hồi" : message.content}
         </div>
 
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
-          {new Date(message.createdAt).toLocaleString("vi-VN")}
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 12, opacity: 0.8 }}>
+            {new Date(message.createdAt).toLocaleTimeString("vi-VN")}{" "}
+            {new Date(message.createdAt).toLocaleDateString("vi-VN")}
+          </span>
+
+          {mine && canRecall && !message.recalled && (
+            <button
+              type="button"
+              onClick={() => onRecall(message.id)}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#bfdbfe",
+                cursor: "pointer",
+                fontSize: 12,
+                padding: 0,
+                fontWeight: 700,
+              }}
+            >
+              Thu hồi
+            </button>
+          )}
         </div>
       </div>
     </div>

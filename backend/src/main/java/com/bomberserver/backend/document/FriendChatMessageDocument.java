@@ -20,6 +20,9 @@ public class FriendChatMessageDocument {
     private String content;
     private Instant createdAt;
 
+    private boolean recalled;
+    private Instant recalledAt;
+
     public String getId() {
         return id;
     }
@@ -66,5 +69,21 @@ public class FriendChatMessageDocument {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public boolean isRecalled() {
+        return recalled;
+    }
+
+    public void setRecalled(boolean recalled) {
+        this.recalled = recalled;
+    }
+
+    public Instant getRecalledAt() {
+        return recalledAt;
+    }
+
+    public void setRecalledAt(Instant recalledAt) {
+        this.recalledAt = recalledAt;
     }
 }

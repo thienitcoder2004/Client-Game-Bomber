@@ -35,6 +35,8 @@ export type FriendChatMessage = {
   receiverId: string;
   content: string;
   createdAt: string;
+  recalled: boolean;
+  recalledAt: string | null;
 };
 
 export type CreateFriendRequest = {

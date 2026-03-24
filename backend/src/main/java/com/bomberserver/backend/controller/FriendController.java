@@ -1,7 +1,11 @@
 package com.bomberserver.backend.controller;
 
 import com.bomberserver.backend.dto.common.MessageResponse;
-import com.bomberserver.backend.dto.friend.*;
+import com.bomberserver.backend.dto.friend.CreateFriendRequest;
+import com.bomberserver.backend.dto.friend.FriendChatMessageResponse;
+import com.bomberserver.backend.dto.friend.FriendListItemResponse;
+import com.bomberserver.backend.dto.friend.FriendRequestResponse;
+import com.bomberserver.backend.dto.friend.FriendSearchItemResponse;
 import com.bomberserver.backend.service.FriendService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
