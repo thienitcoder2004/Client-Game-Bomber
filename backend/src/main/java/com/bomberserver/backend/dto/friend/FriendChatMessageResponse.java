@@ -7,6 +7,8 @@ public record FriendChatMessageResponse(
         String senderId,
         String receiverId,
         String content,
-        Instant createdAt
+        Instant createdAt,
+        boolean recalled,
+        Instant recalledAt
 ) {
 }

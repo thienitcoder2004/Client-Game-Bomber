@@ -5,7 +5,11 @@ import com.bomberserver.backend.document.FriendChatMessageDocument;
 import com.bomberserver.backend.document.FriendDocument;
 import com.bomberserver.backend.document.UserAccountDocument;
 import com.bomberserver.backend.dto.common.MessageResponse;
-import com.bomberserver.backend.dto.friend.*;
+import com.bomberserver.backend.dto.friend.FriendChatMessageResponse;
+import com.bomberserver.backend.dto.friend.FriendListItemResponse;
+import com.bomberserver.backend.dto.friend.FriendRequestResponse;
+import com.bomberserver.backend.dto.friend.FriendSearchItemResponse;
+import com.bomberserver.backend.dto.friend.FriendUserSummaryResponse;
 import com.bomberserver.backend.repository.CharacterProfileRepository;
 import com.bomberserver.backend.repository.FriendChatMessageRepository;
 import com.bomberserver.backend.repository.FriendRepository;
@@ -100,7 +104,9 @@ public class FriendService {
         friend.setStatus("PENDING");
         friend.setCreatedAt(Instant.now());
         friend.setUpdatedAt(Instant.now());
-        friendRepository.save(friend);
+
+        friend = friendRepository.save(friend);
+        friendChatSocketService.notifyFriendRequestCreated(friend);
 
         return new MessageResponse("Đã gửi lời mời kết bạn");
     }
@@ -144,7 +150,9 @@ public class FriendService {
         request.setStatus("ACCEPTED");
         request.setAcceptedAt(Instant.now());
         request.setUpdatedAt(Instant.now());
-        friendRepository.save(request);
+
+        request = friendRepository.save(request);
+        friendChatSocketService.notifyFriendRequestAccepted(request);
 
         return new MessageResponse("Đã chấp nhận lời mời kết bạn");
     }
@@ -162,6 +170,8 @@ public class FriendService {
         }
 
         friendRepository.deleteById(requestId);
+        friendChatSocketService.notifyFriendRequestDeleted(request);
+
         return new MessageResponse("Đã xóa lời mời kết bạn");
     }
 
@@ -192,6 +202,8 @@ public class FriendService {
         }
 
         friendRepository.deleteById(relation.getId());
+        friendChatSocketService.notifyFriendRemoved(currentUserId, friendUserId);
+
         return new MessageResponse("Đã xóa bạn bè");
     }
 
@@ -204,7 +216,9 @@ public class FriendService {
         }
 
         List<FriendChatMessageDocument> messages = friendChatMessageRepository
-                .findTop50ByConversationKeyOrderByCreatedAtDesc(FriendChatSocketService.buildConversationKey(currentUserId, friendUserId));
+                .findTop50ByConversationKeyOrderByCreatedAtDesc(
+                        FriendChatSocketService.buildConversationKey(currentUserId, friendUserId)
+                );
 
         Collections.reverse(messages);
 
@@ -213,8 +227,10 @@ public class FriendService {
                         item.getId(),
                         item.getSenderId(),
                         item.getReceiverId(),
-                        item.getContent(),
-                        item.getCreatedAt()
+                        item.isRecalled() ? "" : item.getContent(),
+                        item.getCreatedAt(),
+                        item.isRecalled(),
+                        item.getRecalledAt()
                 ))
                 .collect(Collectors.toList());
     }
