@@ -20,7 +20,7 @@ const chipStyle: React.CSSProperties = {
 
 export default function LobbyPage() {
   const navigate = useNavigate();
-  const { profile, loading, logout } = useAuth();
+  const { profile, loading, logout, isAdmin } = useAuth();
 
   useEffect(() => {
     if (!loading && profile && !profile.profileCompleted) {
@@ -82,8 +82,29 @@ export default function LobbyPage() {
               </p>
             </div>
 
-            <div style={{ ...chipStyle, color: "#86efac" }}>
-              {profile?.characterName || "Người chơi"}
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              {isAdmin && (
+                <div
+                  style={{
+                    ...chipStyle,
+                    color: "#fde68a",
+                    background: "rgba(250,204,21,0.14)",
+                    border: "1px solid rgba(250,204,21,0.24)",
+                  }}
+                >
+                  ADMIN
+                </div>
+              )}
+              <div style={{ ...chipStyle, color: "#86efac" }}>
+                {profile?.characterName || "Người chơi"}
+              </div>
             </div>
           </div>
         </Card>
@@ -107,87 +128,32 @@ export default function LobbyPage() {
                 gap: 12,
               }}
             >
-              <div
-                style={{
-                  padding: 14,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                <div
-                  style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}
-                >
-                  Username
-                </div>
-                <div style={{ color: "#fff", fontWeight: 700 }}>
-                  {profile?.username || "-"}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 14,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                <div
-                  style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}
-                >
-                  Email
-                </div>
-                <div
-                  style={{
-                    color: "#fff",
-                    fontWeight: 700,
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {profile?.email || "-"}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 14,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                <div
-                  style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}
-                >
-                  Tên nhân vật
-                </div>
-                <div style={{ color: "#fff", fontWeight: 700 }}>
-                  {profile?.characterName || "-"}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 14,
-                  borderRadius: 16,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                <div
-                  style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}
-                >
-                  Giới tính
-                </div>
-                <div style={{ color: "#fff", fontWeight: 700 }}>
-                  {profile?.gender === "MALE"
+              <InfoItem label="Username" value={profile?.username || "-"} />
+              <InfoItem label="Email" value={profile?.email || "-"} breakWord />
+              <InfoItem
+                label="Tên nhân vật"
+                value={profile?.characterName || "-"}
+              />
+              <InfoItem
+                label="Giới tính"
+                value={
+                  profile?.gender === "MALE"
                     ? "Nam"
                     : profile?.gender === "FEMALE"
                       ? "Nữ"
-                      : "-"}
-                </div>
-              </div>
+                      : "-"
+                }
+              />
+              <InfoItem
+                label="Vai trò"
+                value={profile?.role === "ADMIN" ? "Admin" : "Người chơi"}
+              />
+              <InfoItem
+                label="Trạng thái hồ sơ"
+                value={
+                  profile?.profileCompleted ? "Đã hoàn tất" : "Chưa hoàn tất"
+                }
+              />
             </div>
 
             <div
@@ -212,6 +178,18 @@ export default function LobbyPage() {
                 Xem lịch sử đấu
               </Button>
 
+              {isAdmin && (
+                <Button
+                  onClick={() => navigate("/admin")}
+                  style={{
+                    background: "linear-gradient(180deg, #f59e0b, #d97706)",
+                    boxShadow: "0 12px 28px rgba(217,119,6,0.30)",
+                  }}
+                >
+                  Trang admin
+                </Button>
+              )}
+
               <Button
                 onClick={() => {
                   logout();
@@ -232,116 +210,118 @@ export default function LobbyPage() {
               Chọn chế độ
             </h3>
 
-            <div
-              style={{
-                display: "grid",
-                gap: 14,
-              }}
-            >
-              <div
-                style={{
-                  padding: 18,
-                  borderRadius: 18,
-                  background:
-                    "linear-gradient(135deg, rgba(34,197,94,0.12), rgba(255,255,255,0.03))",
-                  border: "1px solid rgba(34,197,94,0.18)",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#86efac",
-                    fontSize: 13,
-                    fontWeight: 800,
-                    marginBottom: 6,
-                  }}
-                >
-                  QUICK PLAY
-                </div>
-                <div
-                  style={{
-                    color: "#fff",
-                    fontSize: 22,
-                    fontWeight: 800,
-                    marginBottom: 8,
-                  }}
-                >
-                  Chơi ngay
-                </div>
-                <div
-                  style={{
-                    color: "#cbd5e1",
-                    lineHeight: 1.7,
-                    marginBottom: 14,
-                  }}
-                >
-                  Vào trận nhanh bằng hệ thống realtime hiện tại.
-                </div>
+            <div style={{ display: "grid", gap: 14 }}>
+              <ModeCard
+                title="QUICK PLAY"
+                titleColor="#86efac"
+                background="linear-gradient(135deg, rgba(34,197,94,0.12), rgba(255,255,255,0.03))"
+                border="1px solid rgba(34,197,94,0.18)"
+                text="Tìm trận nhanh để vào game ngay với cấu hình có sẵn của hệ thống."
+                actionText="Chơi ngay"
+                onClick={() => navigate("/game")}
+              />
 
-                <Button
-                  onClick={() => navigate("/game")}
-                  style={{
-                    background: "linear-gradient(180deg, #22c55e, #16a34a)",
-                    boxShadow: "0 12px 28px rgba(22,163,74,0.30)",
-                  }}
-                >
-                  Vào trận ngay
-                </Button>
-              </div>
+              <ModeCard
+                title="ROOM LOBBY"
+                titleColor="#93c5fd"
+                background="linear-gradient(135deg, rgba(59,130,246,0.12), rgba(255,255,255,0.03))"
+                border="1px solid rgba(59,130,246,0.18)"
+                text="Tạo phòng 2, 3 hoặc 4 người rồi mời bạn bè hoặc thêm bot vào chơi cùng."
+                actionText="Vào phòng chờ"
+                onClick={() => navigate("/rooms")}
+              />
 
-              <div
-                style={{
-                  padding: 18,
-                  borderRadius: 18,
-                  background:
-                    "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(255,255,255,0.03))",
-                  border: "1px solid rgba(59,130,246,0.18)",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#93c5fd",
-                    fontSize: 13,
-                    fontWeight: 800,
-                    marginBottom: 6,
-                  }}
-                >
-                  PRIVATE ROOM
-                </div>
-                <div
-                  style={{
-                    color: "#fff",
-                    fontSize: 22,
-                    fontWeight: 800,
-                    marginBottom: 8,
-                  }}
-                >
-                  Phòng riêng
-                </div>
-                <div
-                  style={{
-                    color: "#cbd5e1",
-                    lineHeight: 1.7,
-                    marginBottom: 14,
-                  }}
-                >
-                  Tạo phòng 2, 3 hoặc 4 người. Mời bạn bè hoặc nhập mã phòng để
-                  chơi cùng.
-                </div>
-
-                <Button
-                  onClick={() => navigate("/rooms")}
-                  style={{
-                    background: "linear-gradient(180deg, #3b82f6, #2563eb)",
-                    boxShadow: "0 12px 28px rgba(37,99,235,0.30)",
-                  }}
-                >
-                  Vào khu phòng riêng
-                </Button>
-              </div>
+              <ModeCard
+                title="MATCH HISTORY"
+                titleColor="#d8b4fe"
+                background="linear-gradient(135deg, rgba(168,85,247,0.12), rgba(255,255,255,0.03))"
+                border="1px solid rgba(168,85,247,0.18)"
+                text="Xem lại kết quả trận đấu, người thắng và chỉ số của các trận bạn đã chơi."
+                actionText="Xem lịch sử"
+                onClick={() => navigate("/history")}
+              />
             </div>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function InfoItem({
+  label,
+  value,
+  breakWord = false,
+}: {
+  label: string;
+  value: string;
+  breakWord?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: 14,
+        borderRadius: 16,
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }}
+    >
+      <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div
+        style={{
+          color: "#fff",
+          fontWeight: 700,
+          wordBreak: breakWord ? "break-word" : "normal",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ModeCard({
+  title,
+  titleColor,
+  background,
+  border,
+  text,
+  actionText,
+  onClick,
+}: {
+  title: string;
+  titleColor: string;
+  background: string;
+  border: string;
+  text: string;
+  actionText: string;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      style={{
+        padding: 18,
+        borderRadius: 18,
+        background,
+        border,
+      }}
+    >
+      <div
+        style={{
+          color: titleColor,
+          fontSize: 13,
+          fontWeight: 800,
+          marginBottom: 6,
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ color: "#e2e8f0", lineHeight: 1.7, marginBottom: 16 }}>
+        {text}
+      </div>
+      <Button onClick={onClick}>{actionText}</Button>
     </div>
   );
 }

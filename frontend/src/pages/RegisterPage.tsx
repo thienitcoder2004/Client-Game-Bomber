@@ -43,6 +43,7 @@ export default function RegisterPage() {
         gender: res.gender,
         avatarCode: res.avatarCode,
         profileCompleted: res.profileCompleted,
+        role: res.role,
       });
 
       navigate("/character");

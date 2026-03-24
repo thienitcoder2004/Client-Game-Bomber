@@ -6,6 +6,7 @@ export type ProfileResponse = {
   gender: string;
   avatarCode: string;
   profileCompleted: boolean;
+  role: string;
 };
 
 export type UpdateProfileRequest = {

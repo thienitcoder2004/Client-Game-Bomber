@@ -38,7 +38,8 @@ public class ProfileService {
                 profile.getCharacterName(),
                 profile.getGender(),
                 profile.getAvatarCode(),
-                profile.isProfileCompleted()
+                profile.isProfileCompleted(),
+                user.getRole()
         );
     }
 
@@ -72,7 +73,8 @@ public class ProfileService {
                 profile.getCharacterName(),
                 profile.getGender(),
                 profile.getAvatarCode(),
-                profile.isProfileCompleted()
+                profile.isProfileCompleted(),
+                user.getRole()
         );
     }
 }
