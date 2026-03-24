@@ -9,6 +9,7 @@ export type StoredAuthUser = {
   gender: string;
   avatarCode: string;
   profileCompleted: boolean;
+  role: string;
 };
 
 export function getStoredToken() {

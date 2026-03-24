@@ -31,7 +31,6 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        // Hash password an toàn
         return new BCryptPasswordEncoder();
     }
 
@@ -44,7 +43,7 @@ public class SecurityConfig {
         if (frontendUrl2 != null && !frontendUrl2.isBlank()) origins.add(frontendUrl2);
 
         config.setAllowedOrigins(origins);
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
 
@@ -64,16 +63,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Auth cho phép public
                         .requestMatchers("/api/auth/**").permitAll()
-
-                        // Tạm thời websocket vẫn public, lát sau ghép JWT vào room handshake
                         .requestMatchers("/ws/**").permitAll()
-
-                        // Cho phép preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // Các API còn lại phải có token
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

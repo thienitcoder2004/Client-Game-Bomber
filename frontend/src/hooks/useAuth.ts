@@ -21,13 +21,14 @@ function getInitialProfile(): ProfileResponse | null {
     gender: storedUser.gender,
     avatarCode: storedUser.avatarCode,
     profileCompleted: storedUser.profileCompleted,
+    role: storedUser.role,
   };
 }
 
 export function useAuth() {
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [profile, setProfile] = useState<ProfileResponse | null>(() =>
-    getInitialProfile()
+    getInitialProfile(),
   );
   const [loading, setLoading] = useState<boolean>(() => !!getStoredToken());
 
@@ -52,6 +53,7 @@ export function useAuth() {
           gender: data.gender,
           avatarCode: data.avatarCode,
           profileCompleted: data.profileCompleted,
+          role: data.role,
         });
       })
       .catch(() => {
@@ -83,6 +85,7 @@ export function useAuth() {
     profile,
     loading,
     isAuthenticated: !!token,
+    isAdmin: profile?.role === "ADMIN",
     setToken,
     setProfile,
     logout,

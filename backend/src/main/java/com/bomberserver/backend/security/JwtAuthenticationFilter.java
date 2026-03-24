@@ -1,16 +1,21 @@
 package com.bomberserver.backend.security;
+
+import com.bomberserver.backend.document.UserAccountDocument;
+import com.bomberserver.backend.repository.UserAccountRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.bomberserver.backend.repository.UserAccountRepository;
+
 import java.io.IOException;
+import java.util.List;
+import java.util.Optional;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -49,18 +54,32 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String userId = jwtService.extractUserId(token);
+            Optional<UserAccountDocument> userOpt = userId == null
+                    ? Optional.empty()
+                    : userAccountRepository.findById(userId);
 
-            // Kiểm tra user còn tồn tại trong DB
-            if (userId == null || userAccountRepository.findById(userId).isEmpty()) {
+            if (userOpt.isEmpty()) {
                 filterChain.doFilter(request, response);
                 return;
             }
+
+            UserAccountDocument user = userOpt.get();
+
+            if (Boolean.FALSE.equals(user.getActive())) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            String role = user.getRole() == null || user.getRole().isBlank()
+                    ? "USER"
+                    : user.getRole().trim().toUpperCase();
 
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(
                             userId,
                             null,
-                            AuthorityUtils.NO_AUTHORITIES
+                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
                     );
 
             SecurityContextHolder.getContext().setAuthentication(authentication);

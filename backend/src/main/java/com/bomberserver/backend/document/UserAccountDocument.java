@@ -21,6 +21,9 @@ public class UserAccountDocument {
 
     private String passwordHash;
 
+    private String role = "USER";
+    private Boolean active = true;
+
     private Instant createdAt;
 
     public UserAccountDocument() {
@@ -30,6 +33,8 @@ public class UserAccountDocument {
         this.email = email;
         this.username = username;
         this.passwordHash = passwordHash;
+        this.role = "USER";
+        this.active = true;
         this.createdAt = Instant.now();
     }
 
@@ -47,6 +52,14 @@ public class UserAccountDocument {
 
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public Boolean getActive() {
+        return active;
     }
 
     public Instant getCreatedAt() {
@@ -67,6 +80,14 @@ public class UserAccountDocument {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public void setActive(Boolean active) {
+        this.active = active;
     }
 
     public void setCreatedAt(Instant createdAt) {

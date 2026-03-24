@@ -31,6 +31,7 @@ export default function LoginPage() {
         gender: res.gender,
         avatarCode: res.avatarCode,
         profileCompleted: res.profileCompleted,
+        role: res.role,
       });
 
       if (res.profileCompleted) {
@@ -86,8 +87,20 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <div style={{ marginTop: 16, color: "#cbd5e1" }}>
-          Chưa có tài khoản? <Link to="/register">Đăng ký</Link>
+        <div
+          style={{
+            marginTop: 16,
+            color: "#cbd5e1",
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            Chưa có tài khoản? <Link to="/register">Đăng ký</Link>
+          </span>
+          <Link to="/forgot-password">Quên mật khẩu?</Link>
         </div>
       </Card>
     </div>

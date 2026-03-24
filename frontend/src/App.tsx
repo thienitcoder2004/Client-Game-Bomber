@@ -1,14 +1,16 @@
+import type { JSX } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { getStoredToken } from "./utils/storage";
+import { getStoredAuthUser, getStoredToken } from "./utils/storage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import CharacterSelectPage from "./pages/CharacterSelectPage";
 import LobbyPage from "./pages/LobbyPage";
 import RoomLobbyPage from "./pages/RoomLobbyPage";
 import HistoryPage from "./pages/HistoryPage";
 import GamePage from "./pages/GamePage";
-import type { JSX } from "react";
+import AdminPage from "./pages/AdminPage";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const token = getStoredToken();
@@ -21,12 +23,29 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
   return children;
 }
 
+function AdminRoute({ children }: { children: JSX.Element }) {
+  const token = getStoredToken();
+  const user = getStoredAuthUser();
+  const location = useLocation();
+
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (user?.role !== "ADMIN") {
+    return <Navigate to="/lobby" replace />;
+  }
+
+  return children;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
       <Route
         path="/character"
@@ -70,6 +89,15 @@ export default function App() {
           <ProtectedRoute>
             <GamePage />
           </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminPage />
+          </AdminRoute>
         }
       />
 

@@ -1,4 +1,5 @@
 package com.bomberserver.backend.dto.auth;
+
 // Response trả token + thông tin cơ bản cho frontend
 public class AuthResponse {
     public String token;
@@ -9,6 +10,7 @@ public class AuthResponse {
     public String gender;
     public String avatarCode;
     public boolean profileCompleted;
+    public String role;
 
     public AuthResponse() {
     }
@@ -21,7 +23,8 @@ public class AuthResponse {
             String characterName,
             String gender,
             String avatarCode,
-            boolean profileCompleted
+            boolean profileCompleted,
+            String role
     ) {
         this.token = token;
         this.userId = userId;
@@ -31,5 +34,6 @@ public class AuthResponse {
         this.gender = gender;
         this.avatarCode = avatarCode;
         this.profileCompleted = profileCompleted;
+        this.role = role;
     }
 }

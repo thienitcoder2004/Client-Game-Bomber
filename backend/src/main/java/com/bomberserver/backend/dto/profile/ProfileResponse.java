@@ -8,6 +8,7 @@ public class ProfileResponse {
     public String gender;
     public String avatarCode;
     public boolean profileCompleted;
+    public String role;
 
     public ProfileResponse() {
     }
@@ -19,7 +20,8 @@ public class ProfileResponse {
             String characterName,
             String gender,
             String avatarCode,
-            boolean profileCompleted
+            boolean profileCompleted,
+            String role
     ) {
         this.userId = userId;
         this.email = email;
@@ -28,5 +30,6 @@ public class ProfileResponse {
         this.gender = gender;
         this.avatarCode = avatarCode;
         this.profileCompleted = profileCompleted;
+        this.role = role;
     }
 }
