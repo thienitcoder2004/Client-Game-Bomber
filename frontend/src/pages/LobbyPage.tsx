@@ -178,6 +178,16 @@ export default function LobbyPage() {
                 Xem lịch sử đấu
               </Button>
 
+              <Button
+                onClick={() => navigate("/friends")}
+                style={{
+                  background: "linear-gradient(180deg, #06b6d4, #0891b2)",
+                  boxShadow: "0 12px 28px rgba(8,145,178,0.30)",
+                }}
+              >
+                Bạn bè & chat
+              </Button>
+
               {isAdmin && (
                 <Button
                   onClick={() => navigate("/admin")}

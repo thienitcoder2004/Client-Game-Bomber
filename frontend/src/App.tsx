@@ -11,6 +11,7 @@ import RoomLobbyPage from "./pages/RoomLobbyPage";
 import HistoryPage from "./pages/HistoryPage";
 import GamePage from "./pages/GamePage";
 import AdminPage from "./pages/AdminPage";
+import FriendsPage from "./pages/FriendsPage";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const token = getStoredToken();
@@ -79,6 +80,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <HistoryPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/friends"
+        element={
+          <ProtectedRoute>
+            <FriendsPage />
           </ProtectedRoute>
         }
       />

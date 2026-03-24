@@ -1,5 +1,6 @@
 package com.bomberserver.backend.config;
 
+import com.bomberserver.backend.ws.FriendChatWebSocketHandler;
 import com.bomberserver.backend.ws.GameWebSocketHandler;
 import com.bomberserver.backend.ws.RoomWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
@@ -13,13 +14,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final GameWebSocketHandler gameWebSocketHandler;
     private final RoomWebSocketHandler roomWebSocketHandler;
+    private final FriendChatWebSocketHandler friendChatWebSocketHandler;
 
     public WebSocketConfig(
             GameWebSocketHandler gameWebSocketHandler,
-            RoomWebSocketHandler roomWebSocketHandler
+            RoomWebSocketHandler roomWebSocketHandler,
+            FriendChatWebSocketHandler friendChatWebSocketHandler
     ) {
         this.gameWebSocketHandler = gameWebSocketHandler;
         this.roomWebSocketHandler = roomWebSocketHandler;
+        this.friendChatWebSocketHandler = friendChatWebSocketHandler;
     }
 
     @Override
@@ -33,6 +37,14 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 );
 
         registry.addHandler(roomWebSocketHandler, "/ws/rooms")
+                .setAllowedOriginPatterns(
+                        "http://localhost:3000",
+                        "http://127.0.0.1:3000",
+                        "http://localhost:5173",
+                        "https://client-game-bomber.vercel.app"
+                );
+
+        registry.addHandler(friendChatWebSocketHandler, "/ws/friends-chat")
                 .setAllowedOriginPatterns(
                         "http://localhost:3000",
                         "http://127.0.0.1:3000",
