@@ -14,21 +14,12 @@ import type { ClientWsMessage } from "../../game/wsTypes";
 type Props = {
   visible: boolean;
   canControl: boolean;
-
-  // Danh sách phím đang giữ, GameCanvas sẽ đọc để gửi move liên tục
   heldKeysRef: MutableRefObject<Set<string>>;
-
-  // Thời điểm input cuối cùng, dùng để tránh kẹt input
   lastInputAtRef: MutableRefObject<number>;
-
-  // Thời điểm vừa gửi move gần nhất.
-  // Rất quan trọng để nút mobile không làm nhân vật chạy quá nhanh.
   lastMoveSentAtRef: MutableRefObject<number>;
-
   sendWs: (payload: ClientWsMessage) => void;
   inventory: ItemType[];
   audioRef: MutableRefObject<GameAudio>;
-
   zoomPercent: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -105,8 +96,6 @@ export default function MobileControls({
   onZoomOut,
 }: Props) {
   const joystickRef = useRef<HTMLDivElement | null>(null);
-
-  // Hướng gần nhất của joystick để tránh gửi move liên tục khi tay rung nhẹ
   const lastDirectionRef = useRef<"up" | "down" | "left" | "right" | null>(
     null,
   );
@@ -116,25 +105,10 @@ export default function MobileControls({
 
   if (!visible) return null;
 
-  // =========================
-  // Thông số joystick
-  // =========================
-
-  // Kích thước vùng joystick
   const JOYSTICK_SIZE = 180;
-
-  // Kích thước núm joystick ở giữa
   const STICK_SIZE = 70;
-
-  // Bán kính tối đa núm được kéo ra
   const MAX_RADIUS = 50;
-
-  // Vùng chết ở giữa:
-  // kéo nhẹ trong vùng này sẽ không di chuyển
   const DEAD_ZONE = 26;
-
-  // Độ lệch tối thiểu để đổi trục rõ ràng
-  // giúp kéo chéo không bị đổi hướng quá nhạy
   const SWITCH_BIAS = 18;
 
   const clearDirections = () => {
@@ -150,7 +124,6 @@ export default function MobileControls({
     return "ArrowRight";
   };
 
-  // Map joystick tròn về 4 hướng vì backend hiện chỉ nhận 4 hướng
   const getDirectionFromDelta = (
     dx: number,
     dy: number,
@@ -158,27 +131,21 @@ export default function MobileControls({
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
 
-    // Nếu còn gần tâm thì không di chuyển
     if (absX < DEAD_ZONE && absY < DEAD_ZONE) {
       return null;
     }
 
-    // Ưu tiên trục X nếu lệch X rõ rệt hơn Y
     if (absX > absY + SWITCH_BIAS) {
       return dx > 0 ? "right" : "left";
     }
 
-    // Ưu tiên trục Y nếu lệch Y rõ rệt hơn X
     if (absY > absX + SWITCH_BIAS) {
       return dy > 0 ? "down" : "up";
     }
 
-    // Nếu đang chéo lưng chừng thì giữ hướng cũ để đỡ giật
     return lastDirectionRef.current;
   };
 
-  // Gửi 1 lệnh move ngay khi đổi hướng.
-  // Đồng thời cập nhật lastMoveSentAtRef để GameCanvas không gửi dồn quá nhanh.
   const sendImmediateMove = (direction: "up" | "down" | "left" | "right") => {
     const now = Date.now();
 
@@ -203,7 +170,6 @@ export default function MobileControls({
 
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    // Giới hạn núm joystick không đi quá xa
     if (distance > MAX_RADIUS) {
       const ratio = MAX_RADIUS / distance;
       dx *= ratio;
@@ -221,11 +187,9 @@ export default function MobileControls({
       return;
     }
 
-    // Giữ hướng hiện tại để GameCanvas tiếp tục gửi move theo nhịp bình thường
     clearDirections();
     heldKeysRef.current.add(directionToKey(direction));
 
-    // Chỉ gửi ngay khi đổi hướng thật sự
     if (lastDirectionRef.current !== direction) {
       primeAudio(audioRef.current);
       sendImmediateMove(direction);
@@ -241,9 +205,6 @@ export default function MobileControls({
     setDragging(false);
   };
 
-  // =========================
-  // Touch event cho mobile
-  // =========================
   const handleTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -271,9 +232,6 @@ export default function MobileControls({
     resetJoystick();
   };
 
-  // =========================
-  // Mouse fallback cho PC
-  // =========================
   const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -302,15 +260,19 @@ export default function MobileControls({
     playBombPlace(audioRef.current);
   };
 
-  // Tạm map SKILL vào item slot 0
-  const sendSkill = () => {
+  const sendBombSkill = () => {
     if (!canControl) return;
-    if (inventory.length === 0) return;
-
     lastInputAtRef.current = Date.now();
     sendWs({
-      type: "use_item",
-      slotIndex: 0,
+      type: "skill_bomb",
+    });
+  };
+
+  const sendSpeedSkill = () => {
+    if (!canControl) return;
+    lastInputAtRef.current = Date.now();
+    sendWs({
+      type: "skill_speed",
     });
   };
 
@@ -326,7 +288,6 @@ export default function MobileControls({
 
   return (
     <div style={overlayStyle}>
-      {/* Cụm zoom */}
       <div
         style={{
           position: "fixed",
@@ -375,7 +336,6 @@ export default function MobileControls({
         </button>
       </div>
 
-      {/* Joystick bên trái */}
       <div
         style={{
           position: "fixed",
@@ -410,7 +370,6 @@ export default function MobileControls({
               "inset 0 8px 24px rgba(255,255,255,0.05), inset 0 -8px 24px rgba(0,0,0,0.22)",
           }}
         >
-          {/* Tâm joystick */}
           <div
             style={{
               position: "absolute",
@@ -424,7 +383,6 @@ export default function MobileControls({
             }}
           />
 
-          {/* Núm joystick */}
           <div
             style={{
               position: "absolute",
@@ -453,7 +411,6 @@ export default function MobileControls({
         </div>
       </div>
 
-      {/* Cụm nút action bên phải */}
       <div
         style={{
           position: "fixed",
@@ -479,25 +436,51 @@ export default function MobileControls({
             onTouchStart={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              sendSkill();
+              sendBombSkill();
             }}
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              sendSkill();
+              sendBombSkill();
             }}
             onContextMenu={(e) => e.preventDefault()}
-            disabled={!canControl || inventory.length === 0}
+            disabled={!canControl}
             style={{
               ...actionButtonStyle,
-              width: 76,
-              height: 76,
-              opacity: !canControl || inventory.length === 0 ? 0.5 : 1,
-              background: "linear-gradient(180deg, #a855f7, #7e22ce)",
-              fontSize: 14,
+              width: 72,
+              height: 72,
+              opacity: !canControl ? 0.5 : 1,
+              background: "linear-gradient(180deg, #8b5cf6, #6d28d9)",
+              fontSize: 13,
             }}
           >
-            SKILL
+            BOMB+
+          </button>
+
+          <button
+            type="button"
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              sendSpeedSkill();
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              sendSpeedSkill();
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+            disabled={!canControl}
+            style={{
+              ...actionButtonStyle,
+              width: 72,
+              height: 72,
+              opacity: !canControl ? 0.5 : 1,
+              background: "linear-gradient(180deg, #22c55e, #15803d)",
+              fontSize: 13,
+            }}
+          >
+            SPEED
           </button>
 
           <button
@@ -527,7 +510,6 @@ export default function MobileControls({
           </button>
         </div>
 
-        {/* Item nhanh */}
         <div
           style={{
             display: "flex",

@@ -7,6 +7,8 @@ import { historyApi } from "../services/historyApi";
 import type { MatchHistoryItem } from "../types/history";
 import { getStoredAuthUser } from "../utils/storage";
 
+const ITEMS_PER_PAGE = 10;
+
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<MatchHistoryItem[]>([]);
@@ -15,13 +17,17 @@ export default function HistoryPage() {
   const [selectedMatch, setSelectedMatch] = useState<MatchHistoryItem | null>(
     null,
   );
+  const [currentPage, setCurrentPage] = useState(1);
 
   const me = useMemo(() => getStoredAuthUser(), []);
 
   useEffect(() => {
     historyApi
       .getMyHistory()
-      .then(setItems)
+      .then((data) => {
+        setItems(data);
+        setCurrentPage(1);
+      })
       .catch((error) => {
         setErrorText(
           error instanceof Error ? error.message : "Không tải được lịch sử",
@@ -31,6 +37,16 @@ export default function HistoryPage() {
         setLoading(false);
       });
   }, []);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedItems = useMemo(() => {
+    const start = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+    return items.slice(start, end);
+  }, [items, safeCurrentPage]);
 
   const getResultText = (match: MatchHistoryItem) => {
     if (!me?.userId) return "Không xác định";
@@ -100,6 +116,11 @@ export default function HistoryPage() {
     return winner ? "Thắng" : "Thua";
   };
 
+  const handleChangePage = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   if (loading) {
     return <Loading text="Đang tải lịch sử đấu..." />;
   }
@@ -137,6 +158,11 @@ export default function HistoryPage() {
             <div style={{ color: "#94a3b8", marginTop: 6 }}>
               Xem kết quả các trận đã chơi và chi tiết người tham gia
             </div>
+            {items.length > 0 && (
+              <div style={{ color: "#94a3b8", marginTop: 8, fontSize: 14 }}>
+                Hiển thị 10 trận / 1 trang — Trang {currentPage}/{totalPages}
+              </div>
+            )}
           </div>
 
           <Button onClick={() => navigate("/lobby")}>Về sảnh</Button>
@@ -166,110 +192,167 @@ export default function HistoryPage() {
             Chưa có lịch sử trận đấu nào.
           </Card>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gap: 16,
-            }}
-          >
-            {items.map((match) => {
-              const resultText = getResultText(match);
-              const resultStyles = getResultStyles(match);
+          <>
+            <div
+              style={{
+                display: "grid",
+                gap: 16,
+              }}
+            >
+              {paginatedItems.map((match) => {
+                const resultText = getResultText(match);
+                const resultStyles = getResultStyles(match);
 
-              return (
-                <Card
-                  key={match.id}
-                  style={{
-                    padding: 20,
-                    border: "1px solid rgba(148, 163, 184, 0.14)",
-                    boxShadow: "0 18px 40px rgba(0,0,0,0.22)",
-                    background:
-                      "linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(15,23,42,0.82) 100%)",
-                  }}
-                >
-                  <div
+                return (
+                  <Card
+                    key={match.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: 16,
-                      flexWrap: "wrap",
+                      padding: 20,
+                      border: "1px solid rgba(148, 163, 184, 0.14)",
+                      boxShadow: "0 18px 40px rgba(0,0,0,0.22)",
+                      background:
+                        "linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(15,23,42,0.82) 100%)",
                     }}
                   >
-                    <div style={{ flex: 1, minWidth: 260 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: 16,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 260 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: 20,
+                              color: "#f8fafc",
+                            }}
+                          >
+                            Room: {match.roomCode || "N/A"}
+                          </div>
+
+                          <div
+                            style={{
+                              ...resultStyles,
+                              padding: "6px 12px",
+                              borderRadius: 999,
+                              fontWeight: 700,
+                              fontSize: 13,
+                            }}
+                          >
+                            {resultText}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: 8,
+                            color: "#cbd5e1",
+                            fontSize: 14,
+                          }}
+                        >
+                          <div>
+                            Người thắng:{" "}
+                            <strong style={{ color: "#f8fafc" }}>
+                              {match.winnerCharacterName || "Không xác định"}
+                            </strong>
+                          </div>
+                          <div>Bắt đầu: {formatDateTime(match.startedAt)}</div>
+                          <div>Kết thúc: {formatDateTime(match.endedAt)}</div>
+                          <div>
+                            Thời lượng:{" "}
+                            {getDurationText(match.startedAt, match.endedAt)}
+                          </div>
+                          <div>Số người chơi: {match.players.length}</div>
+                        </div>
+                      </div>
+
                       <div
                         style={{
                           display: "flex",
                           alignItems: "center",
                           gap: 10,
                           flexWrap: "wrap",
-                          marginBottom: 10,
                         }}
                       >
-                        <div
-                          style={{
-                            fontWeight: 800,
-                            fontSize: 20,
-                            color: "#f8fafc",
-                          }}
-                        >
-                          Room: {match.roomCode || "N/A"}
-                        </div>
-
-                        <div
-                          style={{
-                            ...resultStyles,
-                            padding: "6px 12px",
-                            borderRadius: 999,
-                            fontWeight: 700,
-                            fontSize: 13,
-                          }}
-                        >
-                          {resultText}
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gap: 8,
-                          color: "#cbd5e1",
-                          fontSize: 14,
-                        }}
-                      >
-                        <div>
-                          Người thắng:{" "}
-                          <strong style={{ color: "#f8fafc" }}>
-                            {match.winnerCharacterName || "Không xác định"}
-                          </strong>
-                        </div>
-                        <div>Bắt đầu: {formatDateTime(match.startedAt)}</div>
-                        <div>Kết thúc: {formatDateTime(match.endedAt)}</div>
-                        <div>
-                          Thời lượng:{" "}
-                          {getDurationText(match.startedAt, match.endedAt)}
-                        </div>
-                        <div>Số người chơi: {match.players.length}</div>
+                        <Button onClick={() => setSelectedMatch(match)}>
+                          Xem chi tiết
+                        </Button>
                       </div>
                     </div>
+                  </Card>
+                );
+              })}
+            </div>
 
-                    <div
+            {totalPages > 1 && (
+              <div
+                style={{
+                  marginTop: 24,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button
+                  onClick={() => handleChangePage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  Trước
+                </Button>
+
+                {Array.from({ length: totalPages }, (_, index) => {
+                  const page = index + 1;
+                  const isActive = page === currentPage;
+
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => handleChangePage(page)}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        flexWrap: "wrap",
+                        minWidth: 42,
+                        height: 42,
+                        borderRadius: 12,
+                        border: isActive
+                          ? "1px solid rgba(59,130,246,0.8)"
+                          : "1px solid rgba(148,163,184,0.2)",
+                        background: isActive
+                          ? "linear-gradient(180deg, #3b82f6, #1d4ed8)"
+                          : "rgba(255,255,255,0.04)",
+                        color: "#fff",
+                        fontWeight: 700,
+                        cursor: "pointer",
                       }}
                     >
-                      <Button onClick={() => setSelectedMatch(match)}>
-                        Xem chi tiết
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+                      {page}
+                    </button>
+                  );
+                })}
+
+                <Button
+                  onClick={() => handleChangePage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Sau
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

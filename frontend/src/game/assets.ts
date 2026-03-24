@@ -14,12 +14,13 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 }
 
 /**
- * Load tất cả asset game:
- * - nam
- * - nữ
+ * Load toàn bộ asset game.
+ * Bao gồm:
+ * - sprite nam / nữ
  * - tường
  * - bom
- * - item
+ * - item thường
+ * - item mới: dịch chuyển, bom random, bom đóng băng
  */
 export async function loadAssets(): Promise<Assets> {
   const [
@@ -53,7 +54,12 @@ export async function loadAssets(): Promise<Assets> {
     speedUp,
     shield,
     heart,
+
+    teleport,
+    randomBomb,
+    freezeBomb,
   ] = await Promise.all([
+    // ===== Nhân vật nam =====
     loadImage("/images/hinh1.png"),
     loadImage("/images/hinh1buoc.png"),
     loadImage("/images/quaylung.png"),
@@ -63,6 +69,7 @@ export async function loadAssets(): Promise<Assets> {
     loadImage("/images/xoayphai.png"),
     loadImage("/images/xoayphaibuoc.png"),
 
+    // ===== Nhân vật nữ =====
     loadImage("/images/nuhinh1.png"),
     loadImage("/images/nuhinh1buoc.png"),
     loadImage("/images/nuquaylung.png"),
@@ -72,18 +79,26 @@ export async function loadAssets(): Promise<Assets> {
     loadImage("/images/nuxoayphai.png"),
     loadImage("/images/nuxoayphaibuoc.png"),
 
+    // ===== Map =====
     loadImage("/images/tuonggachphakoduoc.png"),
     loadImage("/images/tuonggophaduoc.png"),
 
+    // ===== Bom =====
     loadImage("/images/bomcap1.png"),
     loadImage("/images/bomcap2.png"),
     loadImage("/images/bomcap3.png"),
 
-    loadImage("/images/items/bomb_up.png"),
-    loadImage("/images/items/flame_up.png"),
-    loadImage("/images/items/speed_up.png"),
-    loadImage("/images/items/shield.png"),
-    loadImage("/images/items/heart.png"),
+    // ===== Item cũ =====
+    loadImage("/images/bomthem.png"),
+    loadImage("/images/flame_up.png"),
+    loadImage("/images/dichuyen.png"),
+    loadImage("/images/flame_plus.png"),
+    loadImage("/images/heart_plus.png"),
+
+    // ===== Item mới =====
+    loadImage("/images/dichchuyen.png"),
+    loadImage("/images/bomnolungtung.png"),
+    loadImage("/images/dongbang.png"),
   ]);
 
   return {
@@ -97,6 +112,7 @@ export async function loadAssets(): Promise<Assets> {
       rightStand: maleRightStand,
       rightWalk: maleRightWalk,
     },
+
     female: {
       downStand: femaleDownStand,
       downWalk: femaleDownWalk,
@@ -107,21 +123,29 @@ export async function loadAssets(): Promise<Assets> {
       rightStand: femaleRightStand,
       rightWalk: femaleRightWalk,
     },
+
     map: {
       hardWall,
       softWall,
     },
+
     bomb: {
       cap1: bombCap1,
       cap2: bombCap2,
       cap3: bombCap3,
     },
+
     items: {
       bombUp,
       flameUp,
       speedUp,
       shield,
       heart,
+
+      // item mới
+      teleport,
+      randomBomb,
+      freezeBomb,
     },
   };
 }

@@ -42,6 +42,9 @@ public class RoomLobbyService {
         this.characterProfileRepository = characterProfileRepository;
     }
 
+    // =========================================================
+    // Kết nối room lobby
+    // =========================================================
     public synchronized void register(WebSocketSession session) {
         SessionInfo info = buildSessionInfo(session);
         sessions.put(session.getId(), info);
@@ -61,6 +64,9 @@ public class RoomLobbyService {
         broadcastRooms();
     }
 
+    // =========================================================
+    // Nhận message từ frontend room lobby
+    // =========================================================
     public synchronized void handleClientMessage(WebSocketSession session, ClientMessage message) {
         if (message == null || message.type == null) return;
 
@@ -68,17 +74,28 @@ public class RoomLobbyService {
             case "list_rooms" -> sendRooms(session);
             case "create_room" -> handleCreateRoom(session, message);
             case "join_room" -> handleJoinRoom(session, message.roomCode);
+
             case "leave_room" -> {
                 leaveCurrentRoom(session.getId(), true);
                 sendCurrentRoomState(session);
                 broadcastRooms();
             }
+
             case "start_room" -> handleStartRoom(session);
+            case "add_bot" -> handleAddBot(session);
+
+            // ===== thêm mới =====
+            case "remove_bot" -> handleRemoveBot(session, message.targetClientId);
+            case "kick_member" -> handleKickMember(session, message.targetClientId);
+
             default -> {
             }
         }
     }
 
+    // =========================================================
+    // Tạo session info từ JWT/profile
+    // =========================================================
     private SessionInfo buildSessionInfo(WebSocketSession session) {
         String userId = "";
         String characterName = "Người chơi";
@@ -100,10 +117,14 @@ public class RoomLobbyService {
         return new SessionInfo(session, userId == null ? "" : userId, characterName);
     }
 
+    // =========================================================
+    // Tạo phòng
+    // =========================================================
     private void handleCreateRoom(WebSocketSession session, ClientMessage message) {
         int maxPlayers = message.maxPlayers == null
                 ? gameConfig.getMatch().getDefaultRequiredPlayers()
                 : message.maxPlayers;
+
         if (maxPlayers < gameConfig.getMatch().getMinRequiredPlayers()
                 || maxPlayers > gameConfig.getMatch().getMaxRequiredPlayers()) {
             sendError(session, "Số người tối đa phải nằm trong khoảng "
@@ -146,6 +167,9 @@ public class RoomLobbyService {
         broadcastRooms();
     }
 
+    // =========================================================
+    // Vào phòng
+    // =========================================================
     private void handleJoinRoom(WebSocketSession session, String roomCodeRaw) {
         if (roomCodeRaw == null || roomCodeRaw.isBlank()) {
             sendError(session, "Bạn chưa nhập mã phòng");
@@ -165,7 +189,7 @@ public class RoomLobbyService {
             return;
         }
 
-        if (room.memberSessionIds.size() >= room.maxPlayers) {
+        if (getTotalMemberCount(room) >= room.maxPlayers) {
             sendError(session, "Phòng đã đầy");
             return;
         }
@@ -179,45 +203,144 @@ public class RoomLobbyService {
         broadcastRooms();
     }
 
-//    private void handleStartRoom(WebSocketSession session) {
-//        String roomCode = sessionToRoom.get(session.getId());
-//        if (roomCode == null) {
-//            sendError(session, "Bạn chưa ở trong phòng nào");
-//            return;
-//        }
-//
-//        RoomInfo room = rooms.get(roomCode);
-//        if (room == null) {
-//            sendError(session, "Không tìm thấy phòng");
-//            return;
-//        }
-//
-//        if (!Objects.equals(room.hostSessionId, session.getId())) {
-//            sendError(session, "Chỉ chủ phòng mới được bấm Chơi");
-//            return;
-//        }
-//
-//        if (room.memberSessionIds.size() < room.maxPlayers) {
-//            sendError(session, "Phòng chưa đủ người");
-//            return;
-//        }
-//
-//        room.status = "PLAYING";
-//        sendRoomStateToMembers(room);
-//        broadcastRooms();
-//
-//        Map<String, Object> started = new HashMap<>();
-//        started.put("roomCode", room.roomCode);
-//        started.put("roomName", room.roomName);
-//
-//        for (String memberSessionId : room.memberSessionIds) {
-//            SessionInfo member = sessions.get(memberSessionId);
-//            if (member != null) {
-//                send(member.session, new ServerMessage("room_started", started));
-//            }
-//        }
-//    }
+    // =========================================================
+    // Thêm bot
+    // =========================================================
+    private void handleAddBot(WebSocketSession session) {
+        String roomCode = sessionToRoom.get(session.getId());
+        if (roomCode == null) {
+            sendError(session, "Bạn chưa ở trong phòng nào");
+            return;
+        }
 
+        RoomInfo room = rooms.get(roomCode);
+        if (room == null) {
+            sendError(session, "Không tìm thấy phòng");
+            return;
+        }
+
+        if (!Objects.equals(room.hostSessionId, session.getId())) {
+            sendError(session, "Chỉ chủ phòng mới được thêm bot");
+            return;
+        }
+
+        if (!"WAITING".equals(room.status)) {
+            sendError(session, "Chỉ được thêm bot khi phòng đang chờ");
+            return;
+        }
+
+        if (getTotalMemberCount(room) >= room.maxPlayers) {
+            sendError(session, "Phòng đã đầy");
+            return;
+        }
+
+        String botId = "BOT_" + (room.botMembers.size() + 1);
+        BotMember bot = new BotMember(botId, botId);
+        room.botMembers.put(botId, bot);
+
+        sendRoomStateToMembers(room);
+        broadcastRooms();
+    }
+
+    // =========================================================
+    // Xóa bot - chỉ host được làm
+    // =========================================================
+    private void handleRemoveBot(WebSocketSession session, String targetClientId) {
+        if (targetClientId == null || targetClientId.isBlank()) {
+            sendError(session, "Thiếu bot cần xóa");
+            return;
+        }
+
+        String roomCode = sessionToRoom.get(session.getId());
+        if (roomCode == null) {
+            sendError(session, "Bạn chưa ở trong phòng nào");
+            return;
+        }
+
+        RoomInfo room = rooms.get(roomCode);
+        if (room == null) {
+            sendError(session, "Không tìm thấy phòng");
+            return;
+        }
+
+        if (!Objects.equals(room.hostSessionId, session.getId())) {
+            sendError(session, "Chỉ chủ phòng mới được xóa bot");
+            return;
+        }
+
+        if (!"WAITING".equals(room.status)) {
+            sendError(session, "Chỉ được xóa bot khi phòng đang chờ");
+            return;
+        }
+
+        BotMember removed = room.botMembers.remove(targetClientId);
+        if (removed == null) {
+            sendError(session, "Không tìm thấy bot trong phòng");
+            return;
+        }
+
+        sendRoomStateToMembers(room);
+        broadcastRooms();
+    }
+
+    // =========================================================
+    // Kick người chơi khác - chỉ host được làm
+    // =========================================================
+    private void handleKickMember(WebSocketSession session, String targetClientId) {
+        if (targetClientId == null || targetClientId.isBlank()) {
+            sendError(session, "Thiếu người chơi cần mời ra");
+            return;
+        }
+
+        String roomCode = sessionToRoom.get(session.getId());
+        if (roomCode == null) {
+            sendError(session, "Bạn chưa ở trong phòng nào");
+            return;
+        }
+
+        RoomInfo room = rooms.get(roomCode);
+        if (room == null) {
+            sendError(session, "Không tìm thấy phòng");
+            return;
+        }
+
+        if (!Objects.equals(room.hostSessionId, session.getId())) {
+            sendError(session, "Chỉ chủ phòng mới được mời người chơi ra");
+            return;
+        }
+
+        if (!"WAITING".equals(room.status)) {
+            sendError(session, "Chỉ được mời người chơi ra khi phòng đang chờ");
+            return;
+        }
+
+        if (Objects.equals(targetClientId, room.hostSessionId)) {
+            sendError(session, "Không thể mời chính chủ phòng ra");
+            return;
+        }
+
+        if (!room.memberSessionIds.contains(targetClientId)) {
+            sendError(session, "Không tìm thấy người chơi trong phòng");
+            return;
+        }
+
+        room.memberSessionIds.remove(targetClientId);
+        sessionToRoom.remove(targetClientId);
+
+        SessionInfo kicked = sessions.get(targetClientId);
+        if (kicked != null) {
+            send(kicked.session, new ServerMessage("error", "Bạn đã bị chủ phòng mời ra khỏi phòng"));
+            send(kicked.session, new ServerMessage("room_state", null));
+            sendRooms(kicked.session);
+        }
+
+        sendRoomStateToMembers(room);
+        broadcastRooms();
+    }
+
+    // =========================================================
+    // Chủ phòng bấm Chơi
+    // =========================================================
     private void handleStartRoom(WebSocketSession session) {
         String roomCode = sessionToRoom.get(session.getId());
         if (roomCode == null) {
@@ -236,7 +359,7 @@ public class RoomLobbyService {
             return;
         }
 
-        if (room.memberSessionIds.size() < room.maxPlayers) {
+        if (getTotalMemberCount(room) < room.maxPlayers) {
             sendError(session, "Phòng chưa đủ người");
             return;
         }
@@ -250,6 +373,12 @@ public class RoomLobbyService {
         started.put("roomName", room.roomName);
         started.put("maxPlayers", room.maxPlayers);
 
+        // số người thật trong room
+        started.put("humanCount", room.memberSessionIds.size());
+
+        // số bot trong room
+        started.put("botCount", room.botMembers.size());
+
         for (String memberSessionId : room.memberSessionIds) {
             SessionInfo member = sessions.get(memberSessionId);
             if (member != null) {
@@ -258,6 +387,9 @@ public class RoomLobbyService {
         }
     }
 
+    // =========================================================
+    // Rời phòng
+    // =========================================================
     private void leaveCurrentRoom(String sessionId, boolean notifyMembers) {
         String roomCode = sessionToRoom.remove(sessionId);
         if (roomCode == null) return;
@@ -281,6 +413,9 @@ public class RoomLobbyService {
         }
     }
 
+    // =========================================================
+    // Gửi trạng thái phòng hiện tại
+    // =========================================================
     private void sendCurrentRoomState(WebSocketSession session) {
         String roomCode = sessionToRoom.get(session.getId());
         if (roomCode == null) {
@@ -306,22 +441,26 @@ public class RoomLobbyService {
         }
     }
 
+    // =========================================================
+    // Build dữ liệu room_state
+    // =========================================================
     private Map<String, Object> buildRoomState(RoomInfo room, String viewerSessionId) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("roomCode", room.roomCode);
         data.put("roomName", room.roomName);
         data.put("maxPlayers", room.maxPlayers);
-        data.put("playerCount", room.memberSessionIds.size());
+        data.put("playerCount", getTotalMemberCount(room));
         data.put("status", room.status);
         data.put("isPrivate", room.isPrivate);
         data.put("isHost", Objects.equals(room.hostSessionId, viewerSessionId));
         data.put("canStart", Objects.equals(room.hostSessionId, viewerSessionId)
-                && room.memberSessionIds.size() == room.maxPlayers);
+                && getTotalMemberCount(room) == room.maxPlayers);
 
         SessionInfo host = sessions.get(room.hostSessionId);
         data.put("hostName", host != null ? host.characterName : "Chủ phòng");
 
         List<Map<String, Object>> members = new ArrayList<>();
+
         for (String memberSessionId : room.memberSessionIds) {
             SessionInfo member = sessions.get(memberSessionId);
             if (member == null) continue;
@@ -330,6 +469,16 @@ public class RoomLobbyService {
             m.put("clientId", memberSessionId);
             m.put("characterName", member.characterName);
             m.put("host", Objects.equals(memberSessionId, room.hostSessionId));
+            m.put("bot", false);
+            members.add(m);
+        }
+
+        for (BotMember bot : room.botMembers.values()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("clientId", bot.botId);
+            m.put("characterName", bot.characterName);
+            m.put("host", false);
+            m.put("bot", true);
             members.add(m);
         }
 
@@ -337,6 +486,9 @@ public class RoomLobbyService {
         return data;
     }
 
+    // =========================================================
+    // Gửi danh sách phòng
+    // =========================================================
     private void sendRooms(WebSocketSession session) {
         List<Map<String, Object>> list = buildPublicRoomSummaries();
         send(session, new ServerMessage("rooms", list));
@@ -374,7 +526,7 @@ public class RoomLobbyService {
             item.put("roomCode", room.roomCode);
             item.put("roomName", room.roomName);
             item.put("hostName", host != null ? host.characterName : "Chủ phòng");
-            item.put("playerCount", room.memberSessionIds.size());
+            item.put("playerCount", getTotalMemberCount(room));
             item.put("maxPlayers", room.maxPlayers);
             item.put("status", room.status);
             item.put("isPrivate", room.isPrivate);
@@ -386,6 +538,10 @@ public class RoomLobbyService {
         return list;
     }
 
+    private int getTotalMemberCount(RoomInfo room) {
+        return room.memberSessionIds.size() + room.botMembers.size();
+    }
+
     private void send(WebSocketSession session, ServerMessage message) {
         try {
             if (session != null && session.isOpen()) {
@@ -395,11 +551,10 @@ public class RoomLobbyService {
         }
     }
 
-    private void sendError(WebSocketSession session, String text) {
+    public void sendError(WebSocketSession session, String text) {
         send(session, new ServerMessage("error", text));
     }
 
-//     Tìm mã phòng theo ID ngẫu nhiên
     private String generateRoomCode() {
         String roomCode;
         do {
@@ -439,6 +594,16 @@ public class RoomLobbyService {
         }
     }
 
+    private static class BotMember {
+        String botId;
+        String characterName;
+
+        BotMember(String botId, String characterName) {
+            this.botId = botId;
+            this.characterName = characterName;
+        }
+    }
+
     private static class RoomInfo {
         String roomCode;
         String roomName;
@@ -447,5 +612,6 @@ public class RoomLobbyService {
         boolean isPrivate;
         String status;
         LinkedHashSet<String> memberSessionIds = new LinkedHashSet<>();
+        LinkedHashMap<String, BotMember> botMembers = new LinkedHashMap<>();
     }
 }

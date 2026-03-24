@@ -4,7 +4,6 @@ import type {
   Direction,
   ExplosionState,
   ItemType,
-  TileType,
 } from "./types";
 
 export type RemotePlayer = {
@@ -14,6 +13,7 @@ export type RemotePlayer = {
   direction: Direction;
   lives: number;
   invulnerableUntil: number;
+  frozenUntil: number;
   inventory: ItemType[];
   maxBombs: number;
   bombRange: number;
@@ -25,10 +25,11 @@ export type RemotePlayer = {
   characterName: string;
   gender: string;
   avatarCode: string;
+  bot?: boolean;
 };
 
 export type RemoteGameState = {
-  board: TileType[][];
+  board: number[][];
   players: RemotePlayer[];
   bombs: BombState[];
   explosions: ExplosionState[];
@@ -77,12 +78,27 @@ export type UseItemClientMessage = {
   slotIndex: number;
 };
 
+export type SkillBombClientMessage = {
+  type: "skill_bomb";
+};
+
+export type SkillSpeedClientMessage = {
+  type: "skill_speed";
+};
+
 export type RestartClientMessage = {
   type: "restart";
+};
+
+export type AddBotClientMessage = {
+  type: "add_bot";
 };
 
 export type ClientWsMessage =
   | MoveClientMessage
   | BombClientMessage
   | UseItemClientMessage
-  | RestartClientMessage;
+  | SkillBombClientMessage
+  | SkillSpeedClientMessage
+  | RestartClientMessage
+  | AddBotClientMessage;

@@ -7,7 +7,10 @@ export type ItemType =
   | "FLAME_UP"
   | "SPEED_UP"
   | "SHIELD"
-  | "HEART";
+  | "HEART"
+  | "TELEPORT"
+  | "RANDOM_BOMB"
+  | "FREEZE_BOMB";
 
 export type BoardItem = {
   id: string;
@@ -33,6 +36,7 @@ export type PlayerState = {
   walkFrame: 0 | 1;
   lives: number;
   invulnerableUntil: number;
+  frozenUntil: number;
   inventory: ItemType[];
   maxBombs: number;
   bombRange: number;
@@ -44,6 +48,9 @@ export type PlayerState = {
   characterName: string;
   gender: string;
   avatarCode: string;
+
+  // ===== thêm để nhận bot từ backend =====
+  bot?: boolean;
 };
 
 export type BombState = {
@@ -53,6 +60,8 @@ export type BombState = {
   col: number;
   placedAt: number;
   range: number;
+  randomPattern: boolean;
+  freezeEffect: boolean;
 };
 
 export type FlameKind =
@@ -77,6 +86,8 @@ export type ExplosionState = {
   startedAt: number;
   duration: number;
   cells: FlameCell[];
+  randomPattern: boolean;
+  freezeEffect: boolean;
 };
 
 export type Particle = {
@@ -118,5 +129,8 @@ export type Assets = {
     speedUp: HTMLImageElement | null;
     shield: HTMLImageElement | null;
     heart: HTMLImageElement | null;
+    teleport: HTMLImageElement | null;
+    randomBomb: HTMLImageElement | null;
+    freezeBomb: HTMLImageElement | null;
   };
 };

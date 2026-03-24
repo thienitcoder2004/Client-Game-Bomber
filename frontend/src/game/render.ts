@@ -21,6 +21,9 @@ import type {
   TileType,
 } from "./types";
 
+/**
+ * Màu đại diện từng player.
+ */
 function getPlayerColor(id: number) {
   if (id === 1) return "#ff4d4f";
   if (id === 2) return "#3b82f6";
@@ -28,27 +31,45 @@ function getPlayerColor(id: number) {
   return "#a855f7";
 }
 
+/**
+ * Tên hiển thị của player.
+ */
 function getPlayerName(player: PlayerState) {
   return player.characterName?.trim() || `P${player.id}`;
 }
 
+/**
+ * Ký hiệu fallback cho item.
+ */
 function getItemLabel(type: ItemType) {
   if (type === "BOMB_UP") return "B";
   if (type === "FLAME_UP") return "F";
   if (type === "SPEED_UP") return "S";
   if (type === "SHIELD") return "SH";
-  return "H";
+  if (type === "HEART") return "H";
+  if (type === "TELEPORT") return "TP";
+  if (type === "RANDOM_BOMB") return "RB";
+  return "FB";
 }
 
+/**
+ * Lấy ảnh item theo loại.
+ */
 function getItemImage(assets: Assets | null, type: ItemType) {
   if (!assets) return null;
   if (type === "BOMB_UP") return assets.items.bombUp;
   if (type === "FLAME_UP") return assets.items.flameUp;
   if (type === "SPEED_UP") return assets.items.speedUp;
   if (type === "SHIELD") return assets.items.shield;
-  return assets.items.heart;
+  if (type === "HEART") return assets.items.heart;
+  if (type === "TELEPORT") return assets.items.teleport;
+  if (type === "RANDOM_BOMB") return assets.items.randomBomb;
+  return assets.items.freezeBomb;
 }
 
+/**
+ * Vẽ nền đất.
+ */
 function drawGroundTile(
   ctx: CanvasRenderingContext2D,
   row: number,
@@ -70,6 +91,9 @@ function drawGroundTile(
   ctx.strokeRect(x + 1, y + 1, TILE - 2, TILE - 2);
 }
 
+/**
+ * Vẽ tường cứng.
+ */
 function drawHardWall(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement | null,
@@ -88,6 +112,9 @@ function drawHardWall(
   ctx.fillRect(x + 4, y + 4, TILE - 8, TILE - 8);
 }
 
+/**
+ * Vẽ tường mềm.
+ */
 function drawSoftWall(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement | null,
@@ -106,6 +133,9 @@ function drawSoftWall(
   ctx.fillRect(x + 6, y + 6, TILE - 12, TILE - 12);
 }
 
+/**
+ * Vẽ item trên map.
+ */
 function drawBoardItem(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
@@ -144,7 +174,13 @@ function drawBoardItem(
             ? "#22c55e"
             : item.type === "SHIELD"
               ? "#3b82f6"
-              : "#ef4444";
+              : item.type === "HEART"
+                ? "#ef4444"
+                : item.type === "TELEPORT"
+                  ? "#8b5cf6"
+                  : item.type === "RANDOM_BOMB"
+                    ? "#f97316"
+                    : "#38bdf8";
 
     ctx.beginPath();
     ctx.arc(cx, cy, 12, 0, Math.PI * 2);
@@ -152,12 +188,15 @@ function drawBoardItem(
 
     ctx.fillStyle = "#fff";
     ctx.font = "bold 10px Arial";
-    ctx.fillText(getItemLabel(item.type), cx - 7, cy + 4);
+    ctx.fillText(getItemLabel(item.type), cx - 9, cy + 4);
   }
 
   ctx.restore();
 }
 
+/**
+ * Vẽ túi đồ trên HUD.
+ */
 function drawInventorySlots(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
@@ -194,21 +233,26 @@ function drawInventorySlots(
     } else {
       ctx.fillStyle = "#facc15";
       ctx.font = "bold 11px Arial";
-      ctx.fillText(getItemLabel(item), x + 10, y + 24);
+      ctx.fillText(getItemLabel(item), x + 6, y + 24);
     }
   }
 }
 
+/**
+ * Vẽ thẻ thông tin ngắn của từng player trên HUD.
+ */
 function drawPlayerStatCard(
   ctx: CanvasRenderingContext2D,
   player: PlayerState,
   index: number,
+  now: number,
 ) {
   const x = 18 + index * 112;
   const y = 36;
   const color = getPlayerColor(player.id);
+  const frozen = now < player.frozenUntil;
 
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillStyle = frozen ? "rgba(56,189,248,0.16)" : "rgba(255,255,255,0.08)";
   ctx.fillRect(x, y, 102, 30);
 
   ctx.fillStyle = color;
@@ -221,14 +265,24 @@ function drawPlayerStatCard(
   ctx.fillStyle = "#cbd5e1";
   ctx.font = "12px Arial";
   ctx.fillText(`❤ ${player.lives}`, x + 10, y + 27);
+
+  if (frozen) {
+    ctx.fillStyle = "#7dd3fc";
+    ctx.font = "bold 11px Arial";
+    ctx.fillText("FROZEN", x + 46, y + 27);
+  }
 }
 
+/**
+ * Vẽ HUD.
+ */
 function drawHUD(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
   players: PlayerState[],
   bombs: BombState[],
   currentPlayer: PlayerState | undefined,
+  now: number,
 ) {
   const grad = ctx.createLinearGradient(0, 0, CANVAS_WIDTH, 0);
   grad.addColorStop(0, "#0b3d7a");
@@ -251,12 +305,18 @@ function drawHUD(
   ctx.fillText(`Bombs on map: ${bombs.length}`, 470, 60);
 
   players.forEach((player, index) => {
-    drawPlayerStatCard(ctx, player, index);
+    drawPlayerStatCard(ctx, player, index, now);
   });
 
   drawInventorySlots(ctx, assets, currentPlayer);
 }
 
+/**
+ * Vẽ bomb trên map.
+ * - bomb thường: viền cam nhẹ
+ * - random bomb: viền tím / cam
+ * - freeze bomb: viền xanh băng
+ */
 function drawBomb(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
@@ -269,6 +329,9 @@ function drawBomb(
   const elapsed = now - bomb.placedAt;
   const danger = Math.max(0, Math.min(1, elapsed / BOMB_FUSE_MS));
   const pulse = 1 + Math.sin(now * 0.015) * 0.03 + danger * 0.06;
+
+  const isFreeze = bomb.freezeEffect;
+  const isRandom = bomb.randomPattern;
 
   ctx.save();
   ctx.translate(x + TILE / 2, y + TILE / 2);
@@ -283,20 +346,28 @@ function drawBomb(
   if (danger > 0.55) {
     ctx.save();
     ctx.shadowBlur = 18;
-    ctx.shadowColor = "#ff8a52";
-    ctx.fillStyle = "rgba(255,120,70,0.22)";
+    ctx.shadowColor = isFreeze ? "#7dd3fc" : isRandom ? "#c084fc" : "#ff8a52";
+    ctx.fillStyle = isFreeze
+      ? "rgba(56,189,248,0.25)"
+      : isRandom
+        ? "rgba(168,85,247,0.20)"
+        : "rgba(255,120,70,0.22)";
     ctx.beginPath();
     ctx.arc(TILE / 2, TILE / 2, 21, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
-  const bombImg = assets?.bomb.cap1 ?? null;
+  const bombImg = isFreeze
+    ? assets?.bomb.cap3 ?? assets?.bomb.cap1 ?? null
+    : isRandom
+      ? assets?.bomb.cap2 ?? assets?.bomb.cap1 ?? null
+      : assets?.bomb.cap1 ?? null;
 
   if (bombImg) {
     ctx.drawImage(bombImg, 8, 6, TILE - 16, TILE - 12);
   } else {
-    ctx.fillStyle = "#222";
+    ctx.fillStyle = isFreeze ? "#38bdf8" : isRandom ? "#a855f7" : "#222";
     ctx.beginPath();
     ctx.arc(TILE / 2, TILE / 2, 16, 0, Math.PI * 2);
     ctx.fill();
@@ -305,6 +376,9 @@ function drawBomb(
   ctx.restore();
 }
 
+/**
+ * Vẽ phần ngoài của flame.
+ */
 function drawFlameOuter(ctx: CanvasRenderingContext2D, kind: FlameKind) {
   if (kind === "center") {
     ctx.beginPath();
@@ -351,6 +425,9 @@ function drawFlameOuter(ctx: CanvasRenderingContext2D, kind: FlameKind) {
   }
 }
 
+/**
+ * Vẽ phần trong của flame.
+ */
 function drawFlameInner(ctx: CanvasRenderingContext2D, kind: FlameKind) {
   if (kind === "center") {
     ctx.beginPath();
@@ -397,12 +474,19 @@ function drawFlameInner(ctx: CanvasRenderingContext2D, kind: FlameKind) {
   }
 }
 
+/**
+ * Vẽ flame.
+ * - normal: cam
+ * - random bomb: tím / cam
+ * - freeze bomb: xanh băng
+ */
 function drawFlameCell(
   ctx: CanvasRenderingContext2D,
   kind: FlameKind,
   x: number,
   y: number,
   progress: number,
+  variant: "normal" | "random" | "freeze",
 ) {
   const fade = progress > 0.72 ? 1 - (progress - 0.72) / 0.28 : 1;
   const pulse = 1 + Math.sin(progress * Math.PI) * 0.08;
@@ -415,28 +499,50 @@ function drawFlameCell(
 
   ctx.save();
   ctx.shadowBlur = 22;
-  ctx.shadowColor = "#ff8a3d";
+  ctx.shadowColor =
+    variant === "freeze"
+      ? "#7dd3fc"
+      : variant === "random"
+        ? "#c084fc"
+        : "#ff8a3d";
 
   const outer = ctx.createLinearGradient(0, 0, TILE, TILE);
-  outer.addColorStop(0, "#fff6b0");
-  outer.addColorStop(0.35, "#ffcf4d");
-  outer.addColorStop(0.75, "#ff7a1f");
-  outer.addColorStop(1, "#d93304");
+  if (variant === "freeze") {
+    outer.addColorStop(0, "#e0f2fe");
+    outer.addColorStop(0.35, "#7dd3fc");
+    outer.addColorStop(0.75, "#38bdf8");
+    outer.addColorStop(1, "#0ea5e9");
+  } else if (variant === "random") {
+    outer.addColorStop(0, "#f5d0fe");
+    outer.addColorStop(0.35, "#d946ef");
+    outer.addColorStop(0.75, "#f97316");
+    outer.addColorStop(1, "#7c3aed");
+  } else {
+    outer.addColorStop(0, "#fff6b0");
+    outer.addColorStop(0.35, "#ffcf4d");
+    outer.addColorStop(0.75, "#ff7a1f");
+    outer.addColorStop(1, "#d93304");
+  }
+
   ctx.fillStyle = outer;
   drawFlameOuter(ctx, kind);
   ctx.restore();
 
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = variant === "freeze" ? "#ffffff" : "#ffffff";
   drawFlameInner(ctx, kind);
 
   ctx.restore();
 }
 
+/**
+ * Flash sáng lúc bom vừa nổ.
+ */
 function drawExplosionFlash(
   ctx: CanvasRenderingContext2D,
   row: number,
   col: number,
   progress: number,
+  variant: "normal" | "random" | "freeze",
 ) {
   if (progress > 0.18) return;
 
@@ -446,10 +552,23 @@ function drawExplosionFlash(
   const alpha = 1 - progress / 0.18;
 
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-  grad.addColorStop(0, `rgba(255,255,255,${0.95 * alpha})`);
-  grad.addColorStop(0.35, `rgba(255,235,170,${0.75 * alpha})`);
-  grad.addColorStop(0.75, `rgba(255,130,40,${0.40 * alpha})`);
-  grad.addColorStop(1, "rgba(255,80,0,0)");
+
+  if (variant === "freeze") {
+    grad.addColorStop(0, `rgba(255,255,255,${0.95 * alpha})`);
+    grad.addColorStop(0.35, `rgba(186,230,253,${0.75 * alpha})`);
+    grad.addColorStop(0.75, `rgba(56,189,248,${0.40 * alpha})`);
+    grad.addColorStop(1, "rgba(14,165,233,0)");
+  } else if (variant === "random") {
+    grad.addColorStop(0, `rgba(255,255,255,${0.95 * alpha})`);
+    grad.addColorStop(0.35, `rgba(233,213,255,${0.75 * alpha})`);
+    grad.addColorStop(0.75, `rgba(168,85,247,${0.40 * alpha})`);
+    grad.addColorStop(1, "rgba(124,58,237,0)");
+  } else {
+    grad.addColorStop(0, `rgba(255,255,255,${0.95 * alpha})`);
+    grad.addColorStop(0.35, `rgba(255,235,170,${0.75 * alpha})`);
+    grad.addColorStop(0.75, `rgba(255,130,40,${0.40 * alpha})`);
+    grad.addColorStop(1, "rgba(255,80,0,0)");
+  }
 
   ctx.save();
   ctx.fillStyle = grad;
@@ -459,6 +578,9 @@ function drawExplosionFlash(
   ctx.restore();
 }
 
+/**
+ * Vẽ particle.
+ */
 function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
   for (const p of particles) {
     const alpha = Math.max(0, p.life / p.maxLife);
@@ -478,12 +600,17 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
   }
 }
 
+/**
+ * Chọn bộ sprite nam / nữ.
+ */
 function pickPlayerSprites(assets: Assets | null, player: PlayerState) {
   if (!assets) return null;
-
   return player.gender === "FEMALE" ? assets.female : assets.male;
 }
 
+/**
+ * Chọn đúng ảnh nhân vật theo hướng và frame đi bộ.
+ */
 function pickPlayerImage(assets: Assets | null, player: PlayerState) {
   const spriteSet = pickPlayerSprites(assets, player);
   if (!spriteSet) return null;
@@ -500,6 +627,10 @@ function pickPlayerImage(assets: Assets | null, player: PlayerState) {
   return player.walkFrame === 0 ? spriteSet.rightStand : spriteSet.rightWalk;
 }
 
+/**
+ * Vẽ nhân vật.
+ * Nếu bị đóng băng thì thêm viền xanh.
+ */
 function drawPlayer(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
@@ -510,6 +641,7 @@ function drawPlayer(
   const y = player.row * TILE;
   const blink =
     now < player.invulnerableUntil && Math.floor(now / 90) % 2 === 0;
+  const frozen = now < player.frozenUntil;
 
   if (blink) return;
   if (player.lives <= 0) return;
@@ -523,11 +655,22 @@ function drawPlayer(
   ctx.ellipse(x + TILE / 2, y + TILE - 10, 15, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = playerColor;
+  ctx.strokeStyle = frozen ? "#7dd3fc" : playerColor;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.ellipse(x + TILE / 2, y + TILE - 10, 18, 10, 0, 0, Math.PI * 2);
   ctx.stroke();
+
+  if (frozen) {
+    ctx.save();
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = "#7dd3fc";
+    ctx.fillStyle = "rgba(125,211,252,0.18)";
+    ctx.beginPath();
+    ctx.arc(x + TILE / 2, y + TILE / 2, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   const img = pickPlayerImage(assets, player);
   if (img) {
@@ -537,6 +680,12 @@ function drawPlayer(
     ctx.fillRect(x + 16, y + 12, 24, 28);
   }
 
+  if (frozen) {
+    ctx.fillStyle = "#e0f2fe";
+    ctx.font = "bold 12px Arial";
+    ctx.fillText("❄", x + TILE - 18, y + 14);
+  }
+
   ctx.fillStyle = playerColor;
   ctx.font = "bold 12px Arial";
   ctx.fillText(getPlayerName(player).slice(0, 10), x + 4, y + 8);
@@ -544,6 +693,9 @@ function drawPlayer(
   ctx.restore();
 }
 
+/**
+ * Vẽ text nổi khi nhặt item.
+ */
 function drawPickupEffects(
   ctx: CanvasRenderingContext2D,
   now: number,
@@ -565,6 +717,9 @@ function drawPickupEffects(
   }
 }
 
+/**
+ * Hàm render toàn bộ scene game.
+ */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   assets: Assets | null,
@@ -582,7 +737,7 @@ export function drawScene(
   ctx.clearRect(0, 0, CANVAS_WIDTH, HUD_HEIGHT + ROWS * TILE);
 
   const currentPlayer = players.find((p) => p.id === myPlayerId);
-  drawHUD(ctx, assets, players, bombs, currentPlayer);
+  drawHUD(ctx, assets, players, bombs, currentPlayer, now);
 
   ctx.save();
   ctx.translate(0, HUD_HEIGHT);
@@ -619,12 +774,18 @@ export function drawScene(
 
   for (const exp of explosions) {
     const progress = Math.min(1, (now - exp.startedAt) / exp.duration);
-    drawExplosionFlash(ctx, exp.row, exp.col, progress);
+    const variant = exp.freezeEffect
+      ? "freeze"
+      : exp.randomPattern
+        ? "random"
+        : "normal";
+
+    drawExplosionFlash(ctx, exp.row, exp.col, progress, variant);
 
     for (const cell of exp.cells) {
       const x = cell.col * TILE;
       const y = cell.row * TILE;
-      drawFlameCell(ctx, cell.kind, x, y, progress);
+      drawFlameCell(ctx, cell.kind, x, y, progress, variant);
     }
   }
 

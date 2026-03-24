@@ -1,5 +1,6 @@
 package com.bomberserver.backend.model;
 
+// 1 ô lửa của vụ nổ
 public class FlameCell {
     public int row;
     public int col;
