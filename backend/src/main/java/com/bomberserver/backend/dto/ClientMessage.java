@@ -10,6 +10,9 @@ public class ClientMessage {
     public Integer maxPlayers;
     public Boolean isPrivate;
 
+    // SOLO hoặc DUO
+    public String matchMode;
+
     // dùng cho kick member / remove bot
     public String targetClientId;
 }

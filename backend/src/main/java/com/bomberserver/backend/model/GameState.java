@@ -21,6 +21,10 @@ public class GameState {
     public int requiredPlayers;
     public Integer countdownSeconds;
 
+    // ===== kiểu trận =====
+    // SOLO hoặc DUO
+    public String matchMode;
+
     public GameState() {
     }
 
@@ -37,7 +41,8 @@ public class GameState {
             boolean gameStarted,
             int connectedPlayers,
             int requiredPlayers,
-            Integer countdownSeconds
+            Integer countdownSeconds,
+            String matchMode
     ) {
         this.board = board;
         this.players = players;
@@ -52,5 +57,6 @@ public class GameState {
         this.connectedPlayers = connectedPlayers;
         this.requiredPlayers = requiredPlayers;
         this.countdownSeconds = countdownSeconds;
+        this.matchMode = matchMode;
     }
 }

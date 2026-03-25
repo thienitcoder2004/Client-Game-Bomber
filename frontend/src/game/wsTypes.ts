@@ -25,6 +25,7 @@ export type RemotePlayer = {
   characterName: string;
   gender: string;
   avatarCode: string;
+  teamId?: string;
   bot?: boolean;
 };
 
@@ -43,6 +44,9 @@ export type RemoteGameState = {
   connectedPlayers: number;
   requiredPlayers: number;
   countdownSeconds: number | null;
+
+  // SOLO hoặc DUO
+  matchMode?: string;
 };
 
 export type InitMessage = {

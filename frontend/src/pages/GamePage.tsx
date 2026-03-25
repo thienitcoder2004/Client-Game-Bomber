@@ -6,9 +6,20 @@ import Button from "../components/common/Button";
 export default function GamePage() {
   const navigate = useNavigate();
 
+  /**
+   * Xác định nút "Về sảnh" sẽ quay về đâu.
+   *
+   * - room  -> /rooms
+   * - quick -> /quick-play
+   * - còn lại -> /lobby
+   */
   const backPath = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("mode") === "room" ? "/rooms" : "/lobby";
+    const sourceMode = params.get("mode");
+
+    if (sourceMode === "room") return "/rooms";
+    if (sourceMode === "quick") return "/quick-play";
+    return "/lobby";
   }, []);
 
   return (
