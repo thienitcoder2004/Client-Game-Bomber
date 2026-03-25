@@ -16,18 +16,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Value("${app.frontend.url}")
-    private String frontendUrl1;
-
-    @Value("${app.frontend.url-2:}")
-    private String frontendUrl2;
+    @Value("${app.frontend.allowed-origins}")
+    private String allowedOriginsProperty;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -38,13 +36,16 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        List<String> origins = new ArrayList<>();
-        if (frontendUrl1 != null && !frontendUrl1.isBlank()) origins.add(frontendUrl1);
-        if (frontendUrl2 != null && !frontendUrl2.isBlank()) origins.add(frontendUrl2);
+        List<String> allowedOrigins = Arrays.stream(allowedOriginsProperty.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .collect(Collectors.toList());
 
-        config.setAllowedOrigins(origins);
+        // Dùng patterns để support preview vercel kiểu https://xxx.vercel.app
+        config.setAllowedOriginPatterns(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        config.setExposedHeaders(List.of("Authorization"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

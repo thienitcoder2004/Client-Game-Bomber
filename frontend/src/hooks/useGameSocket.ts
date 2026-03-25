@@ -59,6 +59,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 1",
       gender: "MALE",
       avatarCode: "male-default",
+      teamId: "P1",
       bot: false,
     },
     {
@@ -81,6 +82,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 2",
       gender: "FEMALE",
       avatarCode: "female-default",
+      teamId: "P2",
       bot: false,
     },
     {
@@ -103,6 +105,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 3",
       gender: "MALE",
       avatarCode: "male-default",
+      teamId: "P3",
       bot: false,
     },
     {
@@ -125,6 +128,7 @@ function createPlaceholderPlayers(rows: number, cols: number): PlayerState[] {
       characterName: "Player 4",
       gender: "FEMALE",
       avatarCode: "female-default",
+      teamId: "P4",
       bot: false,
     },
   ];
@@ -198,6 +202,16 @@ export function useGameSocket(rows: number, cols: number) {
     const botCount = params.get("botCount")?.trim();
     const mode = params.get("mode")?.trim();
 
+    // Quick Play:
+    // - SOLO
+    // - DUO
+    const queueMode = params.get("queueMode")?.trim();
+
+    // Room riêng:
+    // - SOLO
+    // - DUO
+    const matchMode = params.get("matchMode")?.trim();
+
     const wsBase = GAME_CONFIG.network.wsBaseUrl;
     const query = new URLSearchParams();
 
@@ -205,24 +219,34 @@ export function useGameSocket(rows: number, cols: number) {
     if (roomCode) query.set("roomCode", roomCode);
     if (requiredPlayers) query.set("requiredPlayers", requiredPlayers);
 
-    // ===== rất quan trọng =====
-    // truyền tiếp config room lobby sang game socket
+    // truyền tiếp config từ room lobby / quick play
     if (humanCount) query.set("humanCount", humanCount);
     if (botCount) query.set("botCount", botCount);
     if (mode) query.set("mode", mode);
 
-    const wsUrl = `${wsBase}/ws/game?${query.toString()}`;
+    // Room riêng truyền matchMode
+    if (matchMode) query.set("matchMode", matchMode);
 
+    // Quick play truyền queueMode
+    // PHẢI set trước khi tạo wsUrl
+    if (queueMode) query.set("queueMode", queueMode);
+
+    const wsUrl = `${wsBase}/ws/game?${query.toString()}`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
     ws.onopen = () => {
       setConnected(true);
-      setStatusText(
-        roomCode
-          ? `Đã kết nối trận phòng ${roomCode}. Đang chờ người chơi...`
-          : "Đã kết nối server. Đang vào phòng chờ...",
-      );
+
+      if (roomCode) {
+        setStatusText(`Đã kết nối trận phòng ${roomCode}. Đang chờ người chơi...`);
+      } else if (queueMode === "DUO") {
+        setStatusText("Đã kết nối Quick Play Chơi đôi. Đang chờ đủ người...");
+      } else if (queueMode === "SOLO") {
+        setStatusText("Đã kết nối Quick Play Chơi đơn. Đang chờ đủ người...");
+      } else {
+        setStatusText("Đã kết nối server. Đang vào phòng chờ...");
+      }
     };
 
     ws.onmessage = (event) => {
@@ -264,7 +288,11 @@ export function useGameSocket(rows: number, cols: number) {
             `Đã đủ người. Trận bắt đầu sau ${nextState.countdownSeconds}s`,
           );
         } else if (nextState.gameStarted && !nextState.gameOver) {
-          setStatusText("Trận đấu đang diễn ra");
+          if (nextState.matchMode === "DUO") {
+            setStatusText("Trận chơi đôi 2v2 đang diễn ra");
+          } else {
+            setStatusText("Trận chơi đơn đang diễn ra");
+          }
         }
 
         const prevExplosionIds = new Set(explosionsRef.current.map((e) => e.id));
@@ -312,6 +340,7 @@ export function useGameSocket(rows: number, cols: number) {
                 remotePlayer.characterName || `Player ${remotePlayer.id}`,
               gender: remotePlayer.gender || "",
               avatarCode: remotePlayer.avatarCode || "",
+              teamId: remotePlayer.teamId || undefined,
               bot: remotePlayer.bot ?? false,
             };
           },
@@ -354,7 +383,11 @@ export function useGameSocket(rows: number, cols: number) {
           }
         }
 
-        boardRef.current = normalizeBoard(nextState.board ?? []);
+        boardRef.current =
+          nextState.board && nextState.board.length > 0
+            ? normalizeBoard(nextState.board)
+            : createEmptyBoard(rows, cols);
+
         playersRef.current = nextPlayers;
         bombsRef.current = nextState.bombs ?? [];
         explosionsRef.current = nextState.explosions ?? [];

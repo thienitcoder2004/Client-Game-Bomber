@@ -1,21 +1,66 @@
 package com.bomberserver.backend.service;
 
 import com.bomberserver.backend.model.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 @Service
-public class BotAiService {
+public class BotService {
 
     private final Random random = new Random();
 
+    // =========================================================
+    // COOLDOWN DI CHUYỂN THEO SPEED LEVEL
+    // Speed level càng cao -> bot suy nghĩ / di chuyển càng nhanh
+    // =========================================================
+    @Value("${game.timing.move-cooldown-level-1-ms:3000}")
+    private long moveCooldownLevel1Ms;
+
+    @Value("${game.timing.move-cooldown-level-2-ms:2500}")
+    private long moveCooldownLevel2Ms;
+
+    @Value("${game.timing.move-cooldown-level-3-ms:2000}")
+    private long moveCooldownLevel3Ms;
+
+    @Value("${game.timing.move-cooldown-level-4-ms:1500}")
+    private long moveCooldownLevel4Ms;
+
+    @Value("${game.timing.move-cooldown-level-5-ms:1000}")
+    private long moveCooldownLevel5Ms;
+
+    // =========================================================
+    // BOT AI CONFIG
+    // detectRadius         : bán kính phát hiện người chơi
+    // chaseSearchDepth     : số bước tối đa để dí người
+    // breakWallSearchDepth : số bước tối đa để tìm chỗ phá tường
+    // itemSearchDepth      : số bước tối đa để tìm item
+    // escapeSearchDepth    : số bước tối đa để chạy bom
+    // =========================================================
+    @Value("${game.bot.detect-radius:6}")
+    private int detectRadius;
+
+    @Value("${game.bot.chase-search-depth:8}")
+    private int chaseSearchDepth;
+
+    @Value("${game.bot.break-wall-search-depth:6}")
+    private int breakWallSearchDepth;
+
+    @Value("${game.bot.item-search-depth:5}")
+    private int itemSearchDepth;
+
+    @Value("${game.bot.escape-search-depth:8}")
+    private int escapeSearchDepth;
+
     /**
-     * move         = hướng di chuyển
-     * placeBomb    = có đặt bom không
-     * useItemSlot  = dùng item trong túi đồ ở slot nào
-     * useSkillBomb = có dùng skill tăng bom không
-     * useSkillSpeed= có dùng skill tăng tốc không
+     * Kết quả quyết định cuối cùng mà bot trả về trong 1 lần suy nghĩ.
+     *
+     * move          : hướng bot sẽ di chuyển
+     * placeBomb     : bot có đặt bom không
+     * useItemSlot   : bot có dùng item ở slot nào không
+     * useSkillBomb  : có bật skill tăng bomb không
+     * useSkillSpeed : có bật skill tăng tốc không
      */
     public record BotDecision(
             Direction move,
@@ -24,13 +69,21 @@ public class BotAiService {
             boolean useSkillBomb,
             boolean useSkillSpeed
     ) {
+        /**
+         * Trạng thái đứng yên, không làm gì.
+         */
         public static BotDecision idle() {
             return new BotDecision(null, false, null, false, false);
         }
     }
 
     /**
-     * Hàm nhỏ để BFS kiểm tra xem ô nào là ô mục tiêu.
+     * Interface truyền điều kiện mục tiêu vào BFS.
+     *
+     * Ví dụ:
+     * - Tìm ô có người chơi
+     * - Tìm ô cạnh tường mềm
+     * - Tìm ô chứa item
      */
     @FunctionalInterface
     private interface TargetCheck {
@@ -39,21 +92,30 @@ public class BotAiService {
 
     /**
      * Bom ảo dùng để mô phỏng:
-     * nếu bot đặt bom ngay tại vị trí hiện tại,
-     * vùng nổ tương lai sẽ là gì.
+     * Nếu bot đặt bom ngay vị trí hiện tại thì vùng nổ tương lai sẽ như thế nào.
+     *
+     * Mục đích:
+     * - kiểm tra đặt bom xong có thoát được không
+     * - giảm bot tự sát
      */
     private record VirtualBomb(int row, int col, int range) {
     }
 
     /**
-     * Node BFS.
-     * firstMove = bước đầu tiên bot phải đi để tới node hiện tại.
+     * Node dùng trong BFS.
+     *
+     * row, col  : vị trí node hiện tại
+     * firstMove : bước đầu tiên bot phải đi để tới node này
+     * depth     : số bước đã đi từ điểm xuất phát
      */
     private record SearchNode(int row, int col, Direction firstMove, int depth) {
     }
 
     /**
      * Kết quả BFS.
+     *
+     * firstMove : hướng đầu tiên bot nên đi
+     * depth     : độ sâu / khoảng cách tới mục tiêu
      */
     private record SearchResult(Direction firstMove, int depth) {
     }
@@ -62,15 +124,16 @@ public class BotAiService {
      * Hàm quyết định chính của bot.
      *
      * Thứ tự ưu tiên:
-     * 1. Né vùng nguy hiểm
-     * 2. Dùng item nâng cấp ngay
-     * 3. Dùng skill speed nếu cần chạy / rượt
-     * 4. Chuẩn bị bom đặc biệt khi gần mục tiêu
-     * 5. Nếu giết được thì đặt bom
-     * 6. Nếu đang cạnh tường mềm thì ưu tiên phá
-     * 7. Rượt người chơi
-     * 8. Không rượt được thì phá map
-     * 9. Không có gì cấp bách thì đi nhặt item
+     * 1. Nếu đang ở ô nguy hiểm thì né trước
+     * 2. Nếu có item nâng cấp an toàn thì dùng ngay
+     * 3. Nếu có mục tiêu ở hơi xa thì bật speed skill để dí
+     * 4. Nếu ở gần mục tiêu thì chuẩn bị bom đặc biệt
+     * 5. Nếu có cơ hội giết người thì đặt bom
+     * 6. Nếu cạnh tường mềm thì cân nhắc phá tường
+     * 7. Nếu có người trong bán kính phát hiện thì dí theo
+     * 8. Nếu chưa dí ai thì đi tới chỗ phá map
+     * 9. Nếu rảnh thì đi nhặt item gần
+     * 10. Cuối cùng mới đi ngẫu nhiên nhưng vẫn an toàn
      */
     public BotDecision decide(
             int[][] board,
@@ -89,19 +152,23 @@ public class BotAiService {
             return BotDecision.idle();
         }
 
-        // Bot suy nghĩ nhanh hơn để trông giống người chơi thật hơn
+        // Khống chế nhịp suy nghĩ của bot theo speed level.
+        // Nếu chưa tới lượt suy nghĩ tiếp theo thì bot đứng im.
+        long botMoveCooldown = getMoveCooldownForSpeedLevel(bot.speedLevel);
         if (now < bot.botNextThinkAt) {
             return BotDecision.idle();
         }
-        bot.botNextThinkAt = now + 70 + random.nextInt(50);
+        bot.botNextThinkAt = now + botMoveCooldown;
 
-        Player target = findNearestHuman(activePlayers, bot);
+        // Chỉ tìm người chơi thật trong bán kính phát hiện.
+        // Như vậy bot không bị hút mục tiêu ở quá xa trên toàn map.
+        Player target = findNearestHuman(activePlayers, bot, detectRadius);
 
         // =========================================================
-        // 1) Nếu đang đứng trong danger thì ưu tiên né bom
+        // 1) Nếu đang ở ô nguy hiểm -> né trước
         // =========================================================
         if (isDangerCell(board, bombs, explosions, bot.row, bot.col, null)) {
-            boolean useSpeedSkill = bot.speedBoostUntil <= now;
+            boolean useSpeedSkill = false;
 
             Direction escapeMove = findEscapeMoveAllowFutureBlast(
                     board,
@@ -121,7 +188,7 @@ public class BotAiService {
                 );
             }
 
-            // Nếu bí quá thì bật shield
+            // Không chạy được thì ưu tiên dùng khiên
             Integer shieldSlot = findItemSlot(bot, ItemType.SHIELD);
             if (shieldSlot != null && now >= bot.invulnerableUntil) {
                 return new BotDecision(
@@ -133,7 +200,7 @@ public class BotAiService {
                 );
             }
 
-            // Không còn cách thì teleport
+            // Nếu vẫn chưa ổn thì thử dùng teleport
             Integer teleportSlot = findItemSlot(bot, ItemType.TELEPORT);
             if (teleportSlot != null) {
                 return new BotDecision(
@@ -145,6 +212,7 @@ public class BotAiService {
                 );
             }
 
+            // Cuối cùng nếu bí quá thì đi ngẫu nhiên nhưng vẫn ưu tiên an toàn
             Direction panic = randomSafeDirection(board, activePlayers, bombs, explosions, bot);
             return new BotDecision(
                     panic,
@@ -157,6 +225,7 @@ public class BotAiService {
 
         // =========================================================
         // 2) Dùng item nâng cấp "lành tính" ngay
+        // Dùng sớm để bot mạnh lên ổn định
         // =========================================================
         Integer instantItem = findImmediateUpgradeItemSlot(bot);
         if (instantItem != null) {
@@ -164,7 +233,7 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 3) Nếu gần mục tiêu nhưng còn hơi xa thì bật speed skill để dí
+        // 3) Nếu mục tiêu còn hơi xa thì bật speed skill để dí
         // =========================================================
         if (target != null
                 && manhattan(bot.row, bot.col, target.row, target.col) >= 3
@@ -195,7 +264,7 @@ public class BotAiService {
 
         // =========================================================
         // 5) Nếu có thể giết người thì đặt bom
-        //    Nếu số bom còn yếu thì tăng bomb skill trước
+        // Nếu số bom còn yếu thì bật skill bomb trước
         // =========================================================
         if (target != null && shouldPlaceBombToKill(board, activePlayers, bombs, explosions, bot, target, now)) {
             boolean useSkillBomb = bot.maxBombs < 2;
@@ -209,7 +278,8 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 6) Nếu đang cạnh tường mềm thì ưu tiên phá ngay
+        // 6) Nếu đang cạnh tường mềm thì cân nhắc phá tường
+        // Nếu thấy nguy hiểm thì bật shield trước
         // =========================================================
         Integer wallShield = findShieldForBreakingWall(board, activePlayers, bombs, explosions, bot, now);
         if (wallShield != null) {
@@ -228,7 +298,7 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 7) Nếu có người thì dí theo
+        // 7) Nếu có mục tiêu trong bán kính thì BFS dí theo
         // =========================================================
         if (target != null) {
             SearchResult chase = bfsNearest(
@@ -237,7 +307,7 @@ public class BotAiService {
                     bombs,
                     explosions,
                     bot,
-                    12,
+                    chaseSearchDepth,
                     (r, c) -> r == target.row && c == target.col,
                     true,
                     null
@@ -249,7 +319,8 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 8) Không dí được ai thì đi tới vị trí sát tường mềm
+        // 8) Không dí được ai thì đi tới vị trí cạnh tường mềm
+        // để chuẩn bị phá map / mở đường / kiếm item
         // =========================================================
         SearchResult breakWallMove = bfsNearest(
                 board,
@@ -257,7 +328,7 @@ public class BotAiService {
                 bombs,
                 explosions,
                 bot,
-                14,
+                breakWallSearchDepth,
                 (r, c) -> hasAdjacentSoftWall(board, r, c),
                 false,
                 null
@@ -268,7 +339,7 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 9) Nếu rảnh thì đi nhặt item
+        // 9) Nếu rảnh thì đi nhặt item gần và đáng giá
         // =========================================================
         SearchResult bestItemMove = findBestItemMove(
                 board,
@@ -277,7 +348,7 @@ public class BotAiService {
                 explosions,
                 items,
                 bot,
-                8
+                itemSearchDepth
         );
 
         if (bestItemMove != null && bestItemMove.firstMove() != null) {
@@ -285,15 +356,18 @@ public class BotAiService {
         }
 
         // =========================================================
-        // 10) Bí quá thì đi ngẫu nhiên nhưng vẫn phải an toàn
+        // 10) Cuối cùng nếu không có gì ưu tiên hơn
+        // thì đi ngẫu nhiên nhưng vẫn an toàn
         // =========================================================
         Direction wander = randomSafeDirection(board, activePlayers, bombs, explosions, bot);
         return new BotDecision(wander, false, null, false, false);
     }
 
     /**
-     * Kiểm tra ô này hiện tại có lửa đang cháy không.
-     * Đây là danger "ngay lập tức".
+     * Kiểm tra một ô có đang có lửa thật ngay lúc này hay không.
+     *
+     * Đây là danger tức thì.
+     * Nếu true thì tuyệt đối không nên đi vào.
      */
     private boolean isExplosionCell(List<Explosion> explosions, int row, int col) {
         for (Explosion e : explosions) {
@@ -307,7 +381,10 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra ô này có nằm trong vùng nổ tương lai của bom không.
+     * Kiểm tra một ô có nằm trong vùng nổ của bom thật
+     * hoặc bom ảo hay không.
+     *
+     * Dùng để dự đoán danger trong tương lai.
      */
     private boolean isBombThreatCell(
             int[][] board,
@@ -330,14 +407,15 @@ public class BotAiService {
     }
 
     /**
-     * Tìm bước thoát khi đang bị bom đe dọa.
+     * Tìm bước chạy thoát khi bot đang ở trong vùng nguy hiểm.
      *
-     * Điểm quan trọng:
-     * - Ô đích cuối cùng phải an toàn
-     * - Nhưng trên đường chạy có thể băng qua vùng sẽ nổ trong tương lai
-     *   miễn là hiện tại ô đó chưa có lửa thật
+     * Điểm đặc biệt:
+     * - Ô đích cuối phải an toàn
+     * - Nhưng trong lúc chạy có thể đi qua ô sẽ nguy hiểm trong tương lai,
+     *   miễn hiện tại ô đó chưa có lửa thật
      *
-     * Nhờ vậy bot né bom giống người chơi thật hơn.
+     * Cách này làm bot né bom giống người thật hơn,
+     * thay vì thấy "nguy hiểm tương lai" là đứng im luôn.
      */
     private Direction findEscapeMoveAllowFutureBlast(
             int[][] board,
@@ -358,23 +436,34 @@ public class BotAiService {
         while (!queue.isEmpty()) {
             SearchNode cur = queue.poll();
 
+            // Nếu tìm được 1 ô khác vị trí hiện tại và ô đó an toàn
+            // thì trả về bước đầu tiên để đi tới ô đó
             if (!(cur.row == bot.row && cur.col == bot.col)
                     && !isExplosionCell(explosions, cur.row, cur.col)
                     && !isBombThreatCell(board, bombs, cur.row, cur.col, null)) {
                 return cur.firstMove;
             }
 
-            if (cur.depth >= 10) continue;
+            if (cur.depth >= escapeSearchDepth) {
+                continue;
+            }
 
             for (Direction d : List.of(Direction.up, Direction.down, Direction.left, Direction.right)) {
                 int nr = cur.row + dr(d);
                 int nc = cur.col + dc(d);
 
-                if (!inBounds(board, nr, nc) || visited[nr][nc]) continue;
-                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) continue;
+                if (!inBounds(board, nr, nc) || visited[nr][nc]) {
+                    continue;
+                }
 
-                // Không đi vào lửa thật
-                if (isExplosionCell(explosions, nr, nc)) continue;
+                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) {
+                    continue;
+                }
+
+                // Tuyệt đối không bước vào lửa đang cháy thật
+                if (isExplosionCell(explosions, nr, nc)) {
+                    continue;
+                }
 
                 visited[nr][nc] = true;
                 queue.add(new SearchNode(
@@ -390,8 +479,14 @@ public class BotAiService {
     }
 
     /**
-     * Item dùng ngay:
-     * HEART, BOMB_UP, FLAME_UP, SPEED_UP
+     * Tìm item nâng cấp nên dùng ngay trong inventory.
+     *
+     * Vì đây là các item tăng sức mạnh khá "lành tính",
+     * bot dùng ngay để mạnh lên sớm:
+     * - HEART
+     * - BOMB_UP
+     * - FLAME_UP
+     * - SPEED_UP
      */
     private Integer findImmediateUpgradeItemSlot(Player bot) {
         Integer heart = findItemSlot(bot, ItemType.HEART);
@@ -410,8 +505,8 @@ public class BotAiService {
     }
 
     /**
-     * Nếu bot đang cạnh tường mềm mà cảm thấy không đủ đường thoát,
-     * thì dùng shield trước rồi mới phá.
+     * Nếu bot đang đứng cạnh tường mềm mà phá tường có nguy cơ chết,
+     * thì thử dùng shield trước để an toàn hơn.
      */
     private Integer findShieldForBreakingWall(
             int[][] board,
@@ -421,14 +516,17 @@ public class BotAiService {
             Player bot,
             long now
     ) {
+        // Đang bất tử rồi thì không cần dùng khiên nữa
         if (now < bot.invulnerableUntil) {
             return null;
         }
 
+        // Không cạnh tường mềm thì không cần logic này
         if (!hasAdjacentSoftWall(board, bot.row, bot.col)) {
             return null;
         }
 
+        // Nếu đã đủ khả năng chạy sau khi đặt bom thì không cần khiên
         if (canEscapeAfterPlant(board, activePlayers, bombs, explosions, bot)) {
             return null;
         }
@@ -437,7 +535,13 @@ public class BotAiService {
     }
 
     /**
-     * Điều kiện đặt bom để phá tường mềm.
+     * Kiểm tra bot có nên đặt bom để phá tường mềm không.
+     *
+     * Điều kiện:
+     * - Chưa vượt quá số bom tối đa
+     * - Không bị cooldown bom
+     * - Đang cạnh tường mềm
+     * - Sau khi đặt bom vẫn thoát được
      */
     private boolean shouldPlaceBombToBreakWall(
             int[][] board,
@@ -462,7 +566,12 @@ public class BotAiService {
     }
 
     /**
-     * Bot tìm item tốt nhất ở gần.
+     * Tìm hướng đi tới item tốt nhất ở gần.
+     *
+     * Cách chọn:
+     * - mỗi item có điểm ưu tiên khác nhau
+     * - khoảng cách càng xa thì bị trừ điểm
+     * - item có tổng điểm cao nhất sẽ được chọn
      */
     private SearchResult findBestItemMove(
             int[][] board,
@@ -475,6 +584,7 @@ public class BotAiService {
     ) {
         if (items.isEmpty()) return null;
 
+        // Gom item theo tọa độ để tìm nhanh hơn
         Map<String, Item> itemMap = new HashMap<>();
         for (Item item : items) {
             itemMap.put(item.row + ":" + item.col, item);
@@ -504,15 +614,25 @@ public class BotAiService {
                 }
             }
 
-            if (cur.depth >= maxDepth) continue;
+            if (cur.depth >= maxDepth) {
+                continue;
+            }
 
             for (Direction d : List.of(Direction.up, Direction.down, Direction.left, Direction.right)) {
                 int nr = cur.row + dr(d);
                 int nc = cur.col + dc(d);
 
-                if (!inBounds(board, nr, nc) || visited[nr][nc]) continue;
-                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) continue;
-                if (isDangerCell(board, bombs, explosions, nr, nc, null)) continue;
+                if (!inBounds(board, nr, nc) || visited[nr][nc]) {
+                    continue;
+                }
+
+                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) {
+                    continue;
+                }
+
+                if (isDangerCell(board, bombs, explosions, nr, nc, null)) {
+                    continue;
+                }
 
                 visited[nr][nc] = true;
                 queue.add(new SearchNode(
@@ -527,6 +647,11 @@ public class BotAiService {
         return best;
     }
 
+    /**
+     * Điểm ưu tiên của từng loại item.
+     *
+     * Số càng cao thì bot càng thích item đó hơn.
+     */
     private int itemPriority(ItemType type) {
         return switch (type) {
             case HEART -> 10;
@@ -541,16 +666,32 @@ public class BotAiService {
     }
 
     /**
-     * Tìm người chơi thật gần nhất.
+     * Tìm người chơi thật gần bot nhất trong bán kính cho phép.
+     *
+     * Lưu ý:
+     * - Bỏ qua chính bot
+     * - Bỏ qua player đã chết
+     * - Bỏ qua bot khác
+     * - Bỏ qua người chơi ngoài detectRadius
+     *
+     * Nhờ vậy bot không còn quét toàn map nữa.
      */
-    private Player findNearestHuman(List<Player> activePlayers, Player bot) {
+    private Player findNearestHuman(List<Player> activePlayers, Player bot, int detectRadius) {
         Player best = null;
         int bestDist = Integer.MAX_VALUE;
 
         for (Player p : activePlayers) {
-            if (p == null || p.id == bot.id || p.lives <= 0 || p.bot) continue;
+            if (p == null || p.id == bot.id || p.lives <= 0 || p.bot) {
+                continue;
+            }
 
             int dist = manhattan(bot.row, bot.col, p.row, p.col);
+
+            // Ngoài bán kính phát hiện thì bỏ qua
+            if (dist > detectRadius) {
+                continue;
+            }
+
             if (dist < bestDist) {
                 bestDist = dist;
                 best = p;
@@ -561,7 +702,14 @@ public class BotAiService {
     }
 
     /**
-     * Điều kiện đặt bom để giết người.
+     * Kiểm tra bot có nên đặt bom để giết mục tiêu không.
+     *
+     * Điều kiện:
+     * - Chưa vượt quá số bom tối đa
+     * - Không bị cooldown bom
+     * - Mục tiêu ở sát cạnh, hoặc cùng hàng / cùng cột trong tầm nổ
+     * - Đường nổ không bị tường chặn
+     * - Sau khi đặt bom bot còn đường chạy
      */
     private boolean shouldPlaceBombToKill(
             int[][] board,
@@ -602,10 +750,15 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra sau khi đặt bom, bot có thể tìm được một ô đích an toàn hay không.
+     * Mô phỏng:
+     * Nếu bot đặt bom ngay tại vị trí hiện tại,
+     * liệu bot có tìm được một ô an toàn để chạy tới không.
      *
-     * Bản này cho phép bot chạy xuyên qua vùng sẽ nổ trong tương lai,
-     * miễn là ô hiện tại chưa có lửa thật.
+     * Điểm quan trọng:
+     * - Có bom ảo tại vị trí bot
+     * - BFS tìm ô đích an toàn
+     * - Không cho bot bước vào danger hiện tại
+     * - Nhưng không cấm chỉ vì bom ảo sẽ nổ trong tương lai
      */
     private boolean canEscapeAfterPlant(
             int[][] board,
@@ -628,23 +781,34 @@ public class BotAiService {
         while (!queue.isEmpty()) {
             SearchNode cur = queue.poll();
 
+            // Tìm được ô khác vị trí hiện tại và ô đó không còn danger
+            // kể cả khi có thêm bom ảo
             if (!(cur.row == bot.row && cur.col == bot.col)
                     && !isDangerCell(board, bombs, explosions, cur.row, cur.col, virtualBomb)) {
                 return true;
             }
 
-            if (cur.depth >= 10) continue;
+            if (cur.depth >= escapeSearchDepth) {
+                continue;
+            }
 
             for (Direction d : List.of(Direction.up, Direction.down, Direction.left, Direction.right)) {
                 int nr = cur.row + dr(d);
                 int nc = cur.col + dc(d);
 
-                if (!inBounds(board, nr, nc) || visited[nr][nc]) continue;
-                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) continue;
+                if (!inBounds(board, nr, nc) || visited[nr][nc]) {
+                    continue;
+                }
 
-                // Tránh danger hiện tại từ bom thật / lửa thật
-                // nhưng không chặn bước đi chỉ vì bom ảo sẽ nổ trong tương lai
-                if (isDangerCell(board, bombs, explosions, nr, nc, null)) continue;
+                if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) {
+                    continue;
+                }
+
+                // Tránh danger thật hiện tại từ bom đang có / lửa đang cháy
+                // nhưng không cấm đường chỉ vì bom ảo của chính bot
+                if (isDangerCell(board, bombs, explosions, nr, nc, null)) {
+                    continue;
+                }
 
                 visited[nr][nc] = true;
                 queue.add(new SearchNode(
@@ -660,7 +824,17 @@ public class BotAiService {
     }
 
     /**
-     * BFS tìm mục tiêu gần nhất.
+     * BFS tổng quát để tìm mục tiêu gần nhất.
+     *
+     * targetCheck:
+     * - quy định ô nào được xem là mục tiêu
+     *
+     * allowOccupiedGoal:
+     * - true  = cho phép ô mục tiêu đang có người đứng
+     * - false = ô mục tiêu phải trống
+     *
+     * virtualBomb:
+     * - truyền bom ảo nếu muốn BFS tránh thêm một danger giả lập
      */
     private SearchResult bfsNearest(
             int[][] board,
@@ -689,13 +863,17 @@ public class BotAiService {
                 return new SearchResult(cur.firstMove, cur.depth);
             }
 
-            if (cur.depth >= maxDepth) continue;
+            if (cur.depth >= maxDepth) {
+                continue;
+            }
 
             for (Direction d : List.of(Direction.up, Direction.down, Direction.left, Direction.right)) {
                 int nr = cur.row + dr(d);
                 int nc = cur.col + dc(d);
 
-                if (!inBounds(board, nr, nc) || visited[nr][nc]) continue;
+                if (!inBounds(board, nr, nc) || visited[nr][nc]) {
+                    continue;
+                }
 
                 boolean isGoal = targetCheck.ok(nr, nc);
 
@@ -721,7 +899,10 @@ public class BotAiService {
     }
 
     /**
-     * Chọn 1 hướng ngẫu nhiên nhưng an toàn.
+     * Chọn 1 hướng đi ngẫu nhiên nhưng vẫn an toàn.
+     *
+     * Đây là phương án fallback cuối cùng
+     * khi bot không có mục tiêu ưu tiên nào tốt hơn.
      */
     private Direction randomSafeDirection(
             int[][] board,
@@ -743,8 +924,13 @@ public class BotAiService {
             int nr = bot.row + dr(d);
             int nc = bot.col + dc(d);
 
-            if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) continue;
-            if (isDangerCell(board, bombs, explosions, nr, nc, null)) continue;
+            if (!canWalk(board, activePlayers, bombs, nr, nc, bot.id, false)) {
+                continue;
+            }
+
+            if (isDangerCell(board, bombs, explosions, nr, nc, null)) {
+                continue;
+            }
 
             return d;
         }
@@ -753,7 +939,11 @@ public class BotAiService {
     }
 
     /**
-     * Tìm slot item trong inventory.
+     * Tìm vị trí slot của item trong inventory.
+     *
+     * Trả về:
+     * - index nếu có
+     * - null nếu không có
      */
     private Integer findItemSlot(Player player, ItemType type) {
         for (int i = 0; i < player.inventory.size(); i++) {
@@ -765,7 +955,9 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra bot có đứng cạnh tường mềm không.
+     * Kiểm tra bot có đang đứng cạnh tường mềm không.
+     *
+     * Nếu có thì đây là vị trí phù hợp để cân nhắc phá tường.
      */
     private boolean hasAdjacentSoftWall(int[][] board, int row, int col) {
         int[][] dirs = {
@@ -784,7 +976,16 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra ô có đi được không.
+     * Kiểm tra một ô có thể đi vào hay không.
+     *
+     * Điều kiện:
+     * - phải nằm trong map
+     * - phải là ô trống
+     * - không có bom
+     * - không bị player khác đứng chặn
+     *
+     * allowOccupiedGoal:
+     * - cho phép trường hợp đặc biệt là ô mục tiêu có người đứng
      */
     private boolean canWalk(
             int[][] board,
@@ -815,7 +1016,9 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra ô có nguy hiểm không:
+     * Kiểm tra ô có nguy hiểm không.
+     *
+     * Một ô được xem là nguy hiểm nếu:
      * - đang có lửa thật
      * - nằm trong vùng nổ của bom thật
      * - nằm trong vùng nổ của bom ảo (nếu có)
@@ -850,7 +1053,12 @@ public class BotAiService {
     }
 
     /**
-     * Ô target có nằm trong vùng nổ của quả bom không.
+     * Kiểm tra ô target có nằm trong vùng nổ của quả bom không.
+     *
+     * Bom chỉ trúng khi:
+     * - cùng hàng hoặc cùng cột
+     * - trong tầm range
+     * - không bị tường chặn đường nổ
      */
     private boolean hitsCell(int[][] board, int bombRow, int bombCol, int range, int targetRow, int targetCol) {
         if (bombRow == targetRow && bombCol == targetCol) return true;
@@ -873,7 +1081,28 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra đường blast có bị tường cản không.
+     * Chuyển speedLevel thành cooldown di chuyển / suy nghĩ của bot.
+     *
+     * Speed level càng cao thì cooldown càng thấp.
+     */
+    private long getMoveCooldownForSpeedLevel(int speedLevel) {
+        int level = Math.max(1, Math.min(5, speedLevel));
+        return switch (level) {
+            case 1 -> moveCooldownLevel1Ms;
+            case 2 -> moveCooldownLevel2Ms;
+            case 3 -> moveCooldownLevel3Ms;
+            case 4 -> moveCooldownLevel4Ms;
+            case 5 -> moveCooldownLevel5Ms;
+            default -> moveCooldownLevel1Ms;
+        };
+    }
+
+    /**
+     * Kiểm tra đường nổ từ (r1, c1) tới (r2, c2) có bị tường cản hay không.
+     *
+     * ignoreTargetCell:
+     * - true  = bỏ qua chuyện ô đích là tường
+     * - false = ô đích cũng phải không bị chặn
      */
     private boolean clearLineForBlast(int[][] board, int r1, int c1, int r2, int c2, boolean ignoreTargetCell) {
         if (r1 == r2) {
@@ -914,7 +1143,7 @@ public class BotAiService {
     }
 
     /**
-     * Kiểm tra trong map.
+     * Kiểm tra tọa độ có nằm trong map hay không.
      */
     private boolean inBounds(int[][] board, int row, int col) {
         return row >= 0 && col >= 0 && row < board.length && col < board[0].length;
@@ -922,6 +1151,9 @@ public class BotAiService {
 
     /**
      * Delta row theo hướng.
+     *
+     * up   -> -1
+     * down -> +1
      */
     private int dr(Direction d) {
         return switch (d) {
@@ -933,6 +1165,9 @@ public class BotAiService {
 
     /**
      * Delta col theo hướng.
+     *
+     * left  -> -1
+     * right -> +1
      */
     private int dc(Direction d) {
         return switch (d) {
@@ -943,7 +1178,12 @@ public class BotAiService {
     }
 
     /**
-     * Khoảng cách Manhattan.
+     * Tính khoảng cách Manhattan giữa 2 ô.
+     *
+     * Công thức:
+     * |r1-r2| + |c1-c2|
+     *
+     * Rất phù hợp với game đi 4 hướng trên lưới.
      */
     private int manhattan(int r1, int c1, int r2, int c2) {
         return Math.abs(r1 - r2) + Math.abs(c1 - c2);

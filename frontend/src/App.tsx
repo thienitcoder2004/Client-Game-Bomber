@@ -7,6 +7,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import CharacterSelectPage from "./pages/CharacterSelectPage";
 import LobbyPage from "./pages/LobbyPage";
+import QuickPlayModePage from "./pages/QuickPlayModePage";
 import RoomLobbyPage from "./pages/RoomLobbyPage";
 import HistoryPage from "./pages/HistoryPage";
 import GamePage from "./pages/GamePage";
@@ -62,6 +63,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <LobbyPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/quick-play"
+        element={
+          <ProtectedRoute>
+            <QuickPlayModePage />
           </ProtectedRoute>
         }
       />

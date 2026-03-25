@@ -51,6 +51,11 @@ export type PlayerState = {
 
   // ===== thêm để nhận bot từ backend =====
   bot?: boolean;
+
+  // ===== TEAM =====
+  // SOLO: mỗi người một team riêng
+  // DUO: 2 người cùng team sẽ có cùng teamId
+  teamId?: string;
 };
 
 export type BombState = {

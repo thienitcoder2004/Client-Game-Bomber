@@ -26,9 +26,24 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GameRoomService {
 
     // =========================================================
-    // QUICK_PLAY = chơi nhanh, không dùng room lobby riêng
+    // QUICK_PLAY:
+    // - chế độ chơi nhanh
+    // - không đi qua private room lobby
     // =========================================================
     private static final String QUICK_PLAY_KEY = "QUICK-PLAY";
+
+    // =========================================================
+    // MATCH MODE:
+    // - SOLO = chơi đơn
+    // - DUO  = chơi đôi 2v2
+    // =========================================================
+    private static final String MATCH_MODE_SOLO = "SOLO";
+    private static final String MATCH_MODE_DUO = "DUO";
+
+    // =========================================================
+    // SPEED_SKILL_DURATION_MS:
+    // - thời gian tồn tại của skill tăng tốc
+    // =========================================================
     private static final long SPEED_SKILL_DURATION_MS = 5000L;
 
     private final ObjectMapper objectMapper;
@@ -37,9 +52,20 @@ public class GameRoomService {
     private final JwtService jwtService;
     private final CharacterProfileRepository characterProfileRepository;
     private final HistoryService historyService;
-    private final BotAiService botAiService;
+    private final BotService botService;
 
-    // matchKey -> trận hiện tại
+    // =========================================================
+    // roomLobbyService:
+    // - dùng để xóa room khỏi lobby khi trận kết thúc
+    // - hoặc khi tất cả người chơi đã rời trận
+    // =========================================================
+    private final RoomLobbyService roomLobbyService;
+
+    // =========================================================
+    // matches:
+    // - key   = matchKey / roomCode
+    // - value = trạng thái nội bộ của 1 trận
+    // =========================================================
     private final Map<String, MatchInstance> matches = new ConcurrentHashMap<>();
 
     public GameRoomService(
@@ -48,42 +74,51 @@ public class GameRoomService {
             JwtService jwtService,
             CharacterProfileRepository characterProfileRepository,
             HistoryService historyService,
-            BotAiService botAiService
+            BotService botService,
+            RoomLobbyService roomLobbyService
     ) {
         this.objectMapper = objectMapper;
         this.gameConfig = gameConfig;
         this.jwtService = jwtService;
         this.characterProfileRepository = characterProfileRepository;
         this.historyService = historyService;
-        this.botAiService = botAiService;
+        this.botService = botService;
+        this.roomLobbyService = roomLobbyService;
     }
 
     // =========================================================
-    // Người chơi kết nối vào trận
+    // HÀM: join
+    // Mục đích:
+    // - Cho người chơi vào trận
     //
-    // Ý tưởng:
-    // - room lobby sẽ truyền sang:
-    //   + roomCode
-    //   + requiredPlayers
-    //   + humanCount
-    //   + botCount
+    // Nguồn dữ liệu:
+    // - roomCode
+    // - requiredPlayers
+    // - humanCount
+    // - botCount
+    // - matchMode / queueMode
     //
-    // GameRoomService sẽ:
-    // - cho người thật vào trước
-    // - khi đủ số người thật thì mới tự sync bot vào slot trống
+    // Nếu là quick play:
+    // - tách queue riêng SOLO / DUO
+    //
+    // Nếu là custom room:
+    // - giữ đúng config người thật / bot từ lobby truyền sang
     // =========================================================
     public synchronized Integer join(WebSocketSession session) {
         String matchKey = extractRoomCodeFromSession(session);
         int requiredPlayers = extractRequiredPlayersFromSession(session);
         int expectedHumanCount = extractHumanCountFromSession(session);
         int expectedBotCount = extractBotCountFromSession(session);
+        String matchMode = extractMatchModeFromSession(session);
 
+        // Nếu không có roomCode thì đây là quick play.
+        // Tách queue SOLO / DUO để không bị trộn.
         if (matchKey == null || matchKey.isBlank()) {
-            matchKey = QUICK_PLAY_KEY;
+            matchKey = buildQuickPlayMatchKey(matchMode);
         }
 
         // Quick play không dùng bot lobby
-        if (QUICK_PLAY_KEY.equals(matchKey)) {
+        if (matchKey.startsWith(QUICK_PLAY_KEY)) {
             requiredPlayers = gameConfig.getMatch().getDefaultRequiredPlayers();
             expectedHumanCount = requiredPlayers;
             expectedBotCount = 0;
@@ -101,7 +136,7 @@ public class GameRoomService {
             expectedBotCount = requiredPlayers;
         }
 
-        // Nếu room lobby không truyền humanCount thì tự suy ra
+        // Nếu lobby không truyền humanCount thì tự suy ra
         if (expectedHumanCount <= 0) {
             expectedHumanCount = requiredPlayers - expectedBotCount;
         }
@@ -121,6 +156,7 @@ public class GameRoomService {
         final int finalRequiredPlayers = requiredPlayers;
         final int finalExpectedHumanCount = expectedHumanCount;
         final int finalExpectedBotCount = expectedBotCount;
+        final String finalMatchMode = sanitizeMatchMode(matchMode);
 
         MatchInstance match = matches.computeIfAbsent(
                 finalMatchKey,
@@ -128,30 +164,37 @@ public class GameRoomService {
                         key,
                         finalRequiredPlayers,
                         finalExpectedHumanCount,
-                        finalExpectedBotCount
+                        finalExpectedBotCount,
+                        finalMatchMode
                 )
         );
 
-        // Join sau vẫn cập nhật lại config từ room lobby
+        // Nếu join sau thì vẫn cập nhật config từ lobby / quick play
         match.expectedHumanCount = finalExpectedHumanCount;
         match.expectedBotCount = finalExpectedBotCount;
+        match.matchMode = finalMatchMode;
 
         for (int id = 1; id <= match.requiredPlayers; id++) {
             if (!isOccupiedSlot(match, id)) {
                 Player fresh = createFreshPlayer(id);
+
+                // Gán team theo mode
+                applyMatchModeToPlayer(match, fresh);
+
                 match.players.put(id, fresh);
 
                 match.sessions.put(id, session);
                 session.getAttributes().put("playerId", id);
                 session.getAttributes().put("matchKey", finalMatchKey);
 
+                // Người vào đầu tiên trong custom room là host trận
                 if (match.customRoom && match.hostPlayerId == null) {
                     match.hostPlayerId = id;
                 }
 
                 attachProfileToPlayer(match, session, id);
 
-                // Đủ số người thật rồi thì mới sync bot vào
+                // Khi đủ người thật rồi thì sync bot vào slot còn thiếu
                 maybeSyncConfiguredBots(match);
 
                 reevaluateWaitingState(match);
@@ -163,7 +206,14 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Người chơi rời trận
+    // HÀM: leave
+    // Mục đích:
+    // - Xử lý người chơi rời khỏi trận
+    //
+    // Điểm sửa quan trọng:
+    // - Nếu tất cả session người thật đều đã rời trận
+    //   => xóa match
+    //   => đồng thời xóa room khỏi lobby nếu là custom room
     // =========================================================
     public synchronized void leave(String matchKey, int playerId) {
         MatchInstance match = matches.get(matchKey);
@@ -179,16 +229,20 @@ public class GameRoomService {
             updateOvr(leaving);
         }
 
+        // Nếu không còn session người thật nào nữa
+        // thì dọn cả match + dọn room lobby nếu có
         if (match.sessions.isEmpty()) {
+            finishLobbyRoomIfNeeded(match);
             matches.remove(matchKey);
             return;
         }
 
+        // Nếu host của trận rời thì chọn host người thật tiếp theo
         if (Objects.equals(match.hostPlayerId, playerId)) {
             match.hostPlayerId = findNextHumanHost(match);
         }
 
-        // Nếu người thật rời trước lúc bắt đầu thì bot phải sync lại
+        // Nếu người thật rời trước lúc bắt đầu thì sync lại bot
         maybeSyncConfiguredBots(match);
 
         reevaluateWaitingState(match);
@@ -200,6 +254,11 @@ public class GameRoomService {
         broadcastState(matchKey);
     }
 
+    // =========================================================
+    // HÀM: sendInit
+    // Mục đích:
+    // - Gửi playerId ban đầu về cho client
+    // =========================================================
     public synchronized void sendInit(WebSocketSession session, int playerId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("playerId", playerId);
@@ -207,7 +266,10 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Nhận message từ client
+    // HÀM: handleClientMessage
+    // Mục đích:
+    // - Nhận message điều khiển từ client trong trận
+    // - move / bomb / use_item / skill / add_bot / restart
     // =========================================================
     public synchronized void handleClientMessage(String matchKey, int playerId, ClientMessage message) {
         MatchInstance match = matches.get(matchKey);
@@ -244,7 +306,7 @@ public class GameRoomService {
                 }
             }
 
-            // Nút thêm bot trong màn chờ game
+            // Thêm bot ở màn chờ game
             case "add_bot" -> {
                 if (!match.gameOver && !match.gameStarted) {
                     handleAddBot(match, playerId);
@@ -254,6 +316,7 @@ public class GameRoomService {
             case "restart" -> handleRestart(match, playerId);
 
             default -> {
+                // Không làm gì với type không hỗ trợ
             }
         }
 
@@ -261,30 +324,146 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Tạo match mới
+    // HÀM: createMatch
+    // Mục đích:
+    // - Tạo trận mới
+    // - Gắn config room / số người / số bot / kiểu trận
     // =========================================================
     private MatchInstance createMatch(
             String matchKey,
             int requiredPlayers,
             int expectedHumanCount,
-            int expectedBotCount
+            int expectedBotCount,
+            String matchMode
     ) {
         MatchInstance match = new MatchInstance();
         match.matchKey = matchKey;
         match.requiredPlayers = requiredPlayers;
         match.expectedHumanCount = expectedHumanCount;
         match.expectedBotCount = expectedBotCount;
-        match.customRoom = !QUICK_PLAY_KEY.equals(matchKey);
+        match.matchMode = sanitizeMatchMode(matchMode);
+
+        // QUICK-PLAY-SOLO / QUICK-PLAY-DUO đều là quick play
+        match.customRoom = !matchKey.startsWith(QUICK_PLAY_KEY);
         match.hostPlayerId = null;
+
         resetMatch(match);
         return match;
     }
 
     // =========================================================
-    // Restart trận:
-    // - reset map
-    // - giữ lại config room lobby
-    // - sync bot lại
+    // HÀM: sanitizeMatchMode
+    // Mục đích:
+    // - Chuẩn hóa kiểu trận
+    // - Chỉ cho phép SOLO hoặc DUO
+    // =========================================================
+    private String sanitizeMatchMode(String raw) {
+        if (raw != null && MATCH_MODE_DUO.equalsIgnoreCase(raw.trim())) {
+            return MATCH_MODE_DUO;
+        }
+        return MATCH_MODE_SOLO;
+    }
+
+    // =========================================================
+    // HÀM: buildQuickPlayMatchKey
+    // Mục đích:
+    // - Tách queue quick play theo từng kiểu trận
+    // - SOLO và DUO không bị ghép chung với nhau
+    // =========================================================
+    private String buildQuickPlayMatchKey(String matchMode) {
+        return QUICK_PLAY_KEY + "-" + sanitizeMatchMode(matchMode);
+    }
+
+    // =========================================================
+    // HÀM: extractMatchModeFromSession
+    // Mục đích:
+    // - Lấy kiểu trận từ query param
+    //
+    // Ưu tiên:
+    // - queueMode: quick play
+    // - matchMode: room riêng
+    // - mode: fallback cũ nếu ai đó truyền thẳng SOLO / DUO
+    // =========================================================
+    private String extractMatchModeFromSession(WebSocketSession session) {
+        String value = extractQueryParam(session, "queueMode");
+
+        if (value == null || value.isBlank()) {
+            value = extractQueryParam(session, "matchMode");
+        }
+
+        if (value == null || value.isBlank()) {
+            String legacyMode = extractQueryParam(session, "mode");
+            if (MATCH_MODE_SOLO.equalsIgnoreCase(legacyMode)
+                    || MATCH_MODE_DUO.equalsIgnoreCase(legacyMode)) {
+                value = legacyMode;
+            }
+        }
+
+        return sanitizeMatchMode(value);
+    }
+
+    // =========================================================
+    // HÀM: applyMatchModeToPlayer
+    // Mục đích:
+    // - Gán teamId cho player theo kiểu trận hiện tại
+    //
+    // Quy ước DUO:
+    // - Player 1 + Player 3 = LEFT
+    // - Player 2 + Player 4 = RIGHT
+    // =========================================================
+    private void applyMatchModeToPlayer(MatchInstance match, Player player) {
+        if (player == null) return;
+
+        if (MATCH_MODE_DUO.equals(match.matchMode)) {
+            player.teamId = (player.id == 1 || player.id == 3) ? "LEFT" : "RIGHT";
+            return;
+        }
+
+        // SOLO: mỗi người là 1 team riêng
+        player.teamId = "P" + player.id;
+    }
+
+    // =========================================================
+    // HÀM: isSameTeam
+    // Mục đích:
+    // - Kiểm tra 2 player có cùng team không
+    // =========================================================
+    private boolean isSameTeam(Player first, Player second) {
+        if (first == null || second == null) return false;
+        if (first.teamId == null || second.teamId == null) return false;
+        return Objects.equals(first.teamId, second.teamId);
+    }
+
+    // =========================================================
+    // HÀM: isBlockedFriendlyFire
+    // Mục đích:
+    // - Ở DUO: đồng đội không gây damage / freeze cho nhau
+    // - nhưng bản thân vẫn có thể tự dính bom của mình
+    // =========================================================
+    private boolean isBlockedFriendlyFire(MatchInstance match, Player attacker, Player victim) {
+        if (match == null || attacker == null || victim == null) return false;
+        if (!MATCH_MODE_DUO.equals(match.matchMode)) return false;
+        if (attacker.id == victim.id) return false;
+        return isSameTeam(attacker, victim);
+    }
+
+    // =========================================================
+    // HÀM: getTeamDisplayName
+    // Mục đích:
+    // - Đổi teamId sang text dễ đọc
+    // =========================================================
+    private String getTeamDisplayName(String teamId) {
+        if ("LEFT".equals(teamId)) return "Đội Trái";
+        if ("RIGHT".equals(teamId)) return "Đội Phải";
+        return "Đội";
+    }
+
+    // =========================================================
+    // HÀM: handleRestart
+    // Mục đích:
+    // - Reset lại trận
+    // - Giữ lại config room lobby
+    // - Sync bot theo cấu hình trước đó
     // =========================================================
     private void handleRestart(MatchInstance match, int playerId) {
         if (!match.sessions.containsKey(playerId)) return;
@@ -295,7 +474,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Host thêm bot trực tiếp ở màn chờ game
+    // HÀM: handleAddBot
+    // Mục đích:
+    // - Host của trận custom room thêm bot trực tiếp ở màn chờ
     // =========================================================
     private void handleAddBot(MatchInstance match, int requesterPlayerId) {
         if (!match.customRoom) return;
@@ -307,6 +488,10 @@ public class GameRoomService {
         if (freeSlot == null) return;
 
         Player bot = createFreshPlayer(freeSlot);
+
+        // Gán team cho bot theo mode hiện tại
+        applyMatchModeToPlayer(match, bot);
+
         bot.bot = true;
         bot.ready = true;
         bot.displayName = "BOT_" + freeSlot;
@@ -315,15 +500,21 @@ public class GameRoomService {
         bot.avatarCode = "bot";
         match.players.put(freeSlot, bot);
 
-        // Quan trọng: tăng expectedBotCount để restart/sync không bị mất bot
+        // Cập nhật expectedBotCount để restart không bị mất bot
         match.expectedBotCount = countCurrentBots(match);
 
         reevaluateWaitingState(match);
     }
 
     // =========================================================
-    // Nếu chưa đủ số người thật thì chưa cho bot vào
-    // Khi đủ rồi, tự sinh đúng số bot theo config room lobby
+    // HÀM: maybeSyncConfiguredBots
+    // Mục đích:
+    // - Đồng bộ bot theo cấu hình lobby
+    //
+    // Logic:
+    // - Nếu chưa đủ người thật thì chưa cho bot vào
+    // - Nếu dư bot thì xóa bớt
+    // - Nếu thiếu bot thì thêm vào
     // =========================================================
     private boolean maybeSyncConfiguredBots(MatchInstance match) {
         if (!match.customRoom) {
@@ -332,7 +523,7 @@ public class GameRoomService {
 
         boolean changed = false;
 
-        // Chưa đủ người thật -> gỡ bot đi để chờ người thật vào
+        // Chưa đủ người thật -> gỡ bot ra để chờ người thật vào
         if (!match.gameStarted && match.sessions.size() < match.expectedHumanCount) {
             Iterator<Map.Entry<Integer, Player>> iterator = match.players.entrySet().iterator();
             while (iterator.hasNext()) {
@@ -378,6 +569,10 @@ public class GameRoomService {
             if (freeSlot == null) break;
 
             Player bot = createFreshPlayer(freeSlot);
+
+            // Gán team cho bot theo mode hiện tại
+            applyMatchModeToPlayer(match, bot);
+
             bot.bot = true;
             bot.ready = true;
             bot.displayName = "BOT_" + freeSlot;
@@ -393,6 +588,11 @@ public class GameRoomService {
         return changed;
     }
 
+    // =========================================================
+    // HÀM: findNextFreeSlot
+    // Mục đích:
+    // - Tìm slot player còn trống
+    // =========================================================
     private Integer findNextFreeSlot(MatchInstance match) {
         for (int id = 1; id <= match.requiredPlayers; id++) {
             if (!isOccupiedSlot(match, id)) {
@@ -402,6 +602,11 @@ public class GameRoomService {
         return null;
     }
 
+    // =========================================================
+    // HÀM: countCurrentBots
+    // Mục đích:
+    // - Đếm số bot hiện có trong trận
+    // =========================================================
     private int countCurrentBots(MatchInstance match) {
         int count = 0;
         for (Player p : match.players.values()) {
@@ -412,28 +617,58 @@ public class GameRoomService {
         return count;
     }
 
+    // =========================================================
+    // HÀM: findNextHumanHost
+    // Mục đích:
+    // - Tìm host người thật kế tiếp khi host hiện tại rời trận
+    // =========================================================
     private Integer findNextHumanHost(MatchInstance match) {
         return match.sessions.keySet().stream().sorted().findFirst().orElse(null);
     }
 
+    // =========================================================
+    // HÀM: isOccupiedSlot
+    // Mục đích:
+    // - Kiểm tra 1 slot có đang bị chiếm bởi người thật hoặc bot không
+    // =========================================================
     private boolean isOccupiedSlot(MatchInstance match, int playerId) {
         return match.sessions.containsKey(playerId) || isBotSlot(match, playerId);
     }
 
+    // =========================================================
+    // HÀM: isBotSlot
+    // Mục đích:
+    // - Kiểm tra slot có phải bot không
+    // =========================================================
     private boolean isBotSlot(MatchInstance match, int playerId) {
         Player player = match.players.get(playerId);
         return player != null && player.bot;
     }
 
-    // Người thật hoặc bot đều được điều khiển
+    // =========================================================
+    // HÀM: canControlPlayer
+    // Mục đích:
+    // - Kiểm tra player có thể điều khiển được không
+    // - áp dụng cho cả người thật và bot
+    // =========================================================
     private boolean canControlPlayer(MatchInstance match, int playerId) {
         return match.sessions.containsKey(playerId) || isBotSlot(match, playerId);
     }
 
+    // =========================================================
+    // HÀM: isActiveParticipant
+    // Mục đích:
+    // - Kiểm tra player có còn là participant hợp lệ của trận không
+    // =========================================================
     private boolean isActiveParticipant(MatchInstance match, Player player) {
         return player != null && (match.sessions.containsKey(player.id) || player.bot);
     }
 
+    // =========================================================
+    // HÀM: getParticipantCount
+    // Mục đích:
+    // - Đếm tổng participant hiện tại trong trận
+    // =========================================================
     private int getParticipantCount(MatchInstance match) {
         int count = 0;
         for (int id = 1; id <= match.requiredPlayers; id++) {
@@ -444,6 +679,11 @@ public class GameRoomService {
         return count;
     }
 
+    // =========================================================
+    // HÀM: getActivePlayers
+    // Mục đích:
+    // - Lấy danh sách player đang active
+    // =========================================================
     private List<Player> getActivePlayers(MatchInstance match) {
         List<Player> list = new ArrayList<>();
         for (Player player : match.players.values()) {
@@ -455,7 +695,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Tạo player mới với stat mặc định
+    // HÀM: createFreshPlayer
+    // Mục đích:
+    // - Tạo player mới với stat mặc định
     // =========================================================
     private Player createFreshPlayer(int playerId) {
         Player player = new Player(
@@ -487,6 +729,10 @@ public class GameRoomService {
         player.gender = "";
         player.avatarCode = "";
 
+        // Mặc định mỗi người 1 team riêng.
+        // Khi join/reset sẽ được apply lại theo mode thực tế.
+        player.teamId = "P" + playerId;
+
         player.bot = false;
         player.ready = false;
         player.botNextThinkAt = 0L;
@@ -497,7 +743,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Gắn profile từ JWT vào player thật
+    // HÀM: attachProfileToPlayer
+    // Mục đích:
+    // - Gắn profile thật của user vào player dựa trên JWT
     // =========================================================
     private void attachProfileToPlayer(MatchInstance match, WebSocketSession session, int playerId) {
         Player player = match.players.get(playerId);
@@ -526,15 +774,30 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: extractTokenFromSession
+    // Mục đích:
+    // - Lấy token từ query param
+    // =========================================================
     private String extractTokenFromSession(WebSocketSession session) {
         return extractQueryParam(session, "token");
     }
 
+    // =========================================================
+    // HÀM: extractRoomCodeFromSession
+    // Mục đích:
+    // - Lấy roomCode từ query param
+    // =========================================================
     private String extractRoomCodeFromSession(WebSocketSession session) {
         String value = extractQueryParam(session, "roomCode");
         return value == null || value.isBlank() ? null : value.trim().toUpperCase();
     }
 
+    // =========================================================
+    // HÀM: extractRequiredPlayersFromSession
+    // Mục đích:
+    // - Lấy requiredPlayers từ query param
+    // =========================================================
     private int extractRequiredPlayersFromSession(WebSocketSession session) {
         String value = extractQueryParam(session, "requiredPlayers");
         if (value == null || value.isBlank()) {
@@ -548,6 +811,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: extractHumanCountFromSession
+    // Mục đích:
+    // - Lấy humanCount từ query param
+    // =========================================================
     private int extractHumanCountFromSession(WebSocketSession session) {
         String value = extractQueryParam(session, "humanCount");
         if (value == null || value.isBlank()) {
@@ -561,6 +829,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: extractBotCountFromSession
+    // Mục đích:
+    // - Lấy botCount từ query param
+    // =========================================================
     private int extractBotCountFromSession(WebSocketSession session) {
         String value = extractQueryParam(session, "botCount");
         if (value == null || value.isBlank()) {
@@ -574,6 +847,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: extractQueryParam
+    // Mục đích:
+    // - Helper lấy value của 1 query param bất kỳ từ websocket URL
+    // =========================================================
     private String extractQueryParam(WebSocketSession session, String key) {
         try {
             URI uri = session.getUri();
@@ -592,7 +870,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Tính lại trạng thái waiting / countdown
+    // HÀM: reevaluateWaitingState
+    // Mục đích:
+    // - Tính lại trạng thái waiting / countdown trước khi trận bắt đầu
     // =========================================================
     private void reevaluateWaitingState(MatchInstance match) {
         int joined = getParticipantCount(match);
@@ -614,6 +894,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: startMatchNow
+    // Mục đích:
+    // - Đánh dấu trận chính thức bắt đầu
+    // =========================================================
     private void startMatchNow(MatchInstance match) {
         match.gameStarted = true;
         match.waitingForPlayers = false;
@@ -624,10 +909,20 @@ public class GameRoomService {
         match.historySaved = false;
     }
 
+    // =========================================================
+    // HÀM: getMoveCooldown
+    // Mục đích:
+    // - Lấy thời gian delay giữa 2 lần di chuyển theo speedLevel
+    // =========================================================
     private long getMoveCooldown(Player player) {
         return gameConfig.getMoveCooldownForSpeedLevel(player.speedLevel);
     }
 
+    // =========================================================
+    // HÀM: updateOvr
+    // Mục đích:
+    // - Tính lại OVR cho 1 player
+    // =========================================================
     private void updateOvr(Player player) {
         int score = player.kills * 100
                 + player.lives * 50
@@ -636,6 +931,11 @@ public class GameRoomService {
         player.ovr = Math.max(0, score);
     }
 
+    // =========================================================
+    // HÀM: updateAllOvr
+    // Mục đích:
+    // - Tính lại OVR cho toàn bộ player
+    // =========================================================
     private void updateAllOvr(MatchInstance match) {
         for (Player p : match.players.values()) {
             if (p != null) {
@@ -644,10 +944,20 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: isPlayerFrozen
+    // Mục đích:
+    // - Kiểm tra player có đang bị đông băng hay không
+    // =========================================================
     private boolean isPlayerFrozen(Player player, long now) {
         return player.frozenUntil > 0 && now < player.frozenUntil;
     }
 
+    // =========================================================
+    // HÀM: handleMove (String)
+    // Mục đích:
+    // - Parse direction từ string rồi gọi sang handleMove(Direction)
+    // =========================================================
     private void handleMove(MatchInstance match, int playerId, String directionRaw) {
         if (directionRaw == null) return;
 
@@ -661,6 +971,11 @@ public class GameRoomService {
         handleMove(match, playerId, direction);
     }
 
+    // =========================================================
+    // HÀM: handleMove (Direction)
+    // Mục đích:
+    // - Xử lý di chuyển thực tế của player
+    // =========================================================
     private void handleMove(MatchInstance match, int playerId, Direction direction) {
         Player player = match.players.get(playerId);
         if (player == null) return;
@@ -693,6 +1008,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: handlePlaceBomb
+    // Mục đích:
+    // - Đặt bom nếu player còn slot bom
+    // =========================================================
     private void handlePlaceBomb(MatchInstance match, int playerId) {
         Player player = match.players.get(playerId);
         if (player == null) return;
@@ -732,9 +1052,10 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Skill tăng số bom
-    // - Người thật dùng được
-    // - Bot cũng dùng được
+    // HÀM: handleUseBombSkill
+    // Mục đích:
+    // - Skill tăng maxBombs
+    // - Áp dụng cho người thật và bot
     // =========================================================
     private void handleUseBombSkill(MatchInstance match, int playerId) {
         Player player = match.players.get(playerId);
@@ -751,9 +1072,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Skill tăng tốc
-    // - Người thật dùng được
-    // - Bot cũng dùng được
+    // HÀM: handleUseSpeedSkill
+    // Mục đích:
+    // - Skill tăng tốc tạm thời trong 5 giây
     // =========================================================
     private void handleUseSpeedSkill(MatchInstance match, int playerId) {
         Player player = match.players.get(playerId);
@@ -775,8 +1096,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Dùng item
-    // Bot cũng được dùng item nên dùng canControlPlayer(...)
+    // HÀM: handleUseItem
+    // Mục đích:
+    // - Dùng item trong inventory
     // =========================================================
     private void handleUseItem(MatchInstance match, int playerId, Integer slotIndex) {
         Player player = match.players.get(playerId);
@@ -789,19 +1111,15 @@ public class GameRoomService {
         long now = System.currentTimeMillis();
 
         switch (item) {
-            case BOMB_UP -> {
-                player.maxBombs = Math.min(
-                        player.maxBombs + 1,
-                        gameConfig.getPlayer().getMaxBombs()
-                );
-            }
+            case BOMB_UP -> player.maxBombs = Math.min(
+                    player.maxBombs + 1,
+                    gameConfig.getPlayer().getMaxBombs()
+            );
 
-            case FLAME_UP -> {
-                player.bombRange = Math.min(
-                        player.bombRange + 1,
-                        gameConfig.getPlayer().getMaxBombRange()
-                );
-            }
+            case FLAME_UP -> player.bombRange = Math.min(
+                    player.bombRange + 1,
+                    gameConfig.getPlayer().getMaxBombRange()
+            );
 
             case SPEED_UP -> {
                 player.baseSpeedLevel = Math.min(
@@ -816,19 +1134,15 @@ public class GameRoomService {
                 }
             }
 
-            case SHIELD -> {
-                player.invulnerableUntil = Math.max(
-                        player.invulnerableUntil,
-                        now + gameConfig.getPlayer().getShieldDurationMs()
-                );
-            }
+            case SHIELD -> player.invulnerableUntil = Math.max(
+                    player.invulnerableUntil,
+                    now + gameConfig.getPlayer().getShieldDurationMs()
+            );
 
-            case HEART -> {
-                player.lives = Math.min(
-                        player.lives + 1,
-                        gameConfig.getPlayer().getMaxLives()
-                );
-            }
+            case HEART -> player.lives = Math.min(
+                    player.lives + 1,
+                    gameConfig.getPlayer().getMaxLives()
+            );
 
             case TELEPORT -> {
                 teleportPlayerToRandomSafeTile(match, player);
@@ -843,7 +1157,15 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Tick game chính
+    // HÀM: tick
+    // Mục đích:
+    // - Tick game chính theo fixedRate
+    // - xử lý countdown
+    // - hết hiệu ứng
+    // - bot
+    // - bom nổ
+    // - explosion hết hạn
+    // - damage / freeze
     // =========================================================
     @Scheduled(fixedRateString = "${game.match.tick-rate-ms:100}")
     public synchronized void tick() {
@@ -856,7 +1178,7 @@ public class GameRoomService {
             boolean changed = false;
             long now = System.currentTimeMillis();
 
-            // Countdown bắt đầu trận
+            // Countdown trước khi bắt đầu trận
             if (!match.gameStarted && match.countdownStartedAt != null) {
                 long elapsed = now - match.countdownStartedAt;
                 int remain = gameConfig.getMatch().getStartCountdownSeconds() - (int) (elapsed / 1000);
@@ -938,12 +1260,14 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Update bot:
-    // 1) skill bomb
-    // 2) skill speed
-    // 3) item
-    // 4) đặt bom
-    // 5) di chuyển
+    // HÀM: updateBots
+    // Mục đích:
+    // - Tính quyết định của bot mỗi tick
+    // - dùng skill bomb
+    // - dùng skill speed
+    // - dùng item
+    // - đặt bom
+    // - di chuyển
     // =========================================================
     private boolean updateBots(MatchInstance match, long now) {
         if (!match.customRoom) return false;
@@ -955,7 +1279,7 @@ public class GameRoomService {
         for (Player bot : activePlayers) {
             if (bot == null || !bot.bot || bot.lives <= 0) continue;
 
-            BotAiService.BotDecision decision = botAiService.decide(
+            BotService.BotDecision decision = botService.decide(
                     match.board,
                     activePlayers,
                     match.bombs,
@@ -1000,8 +1324,8 @@ public class GameRoomService {
                 if (match.bombs.size() != beforeBombs) {
                     changed = true;
 
-                    // Vừa đặt bom xong thì cho bot suy nghĩ lại ngay
-                    // để nó chuyển sang mode chạy thoát
+                    // Bot vừa đặt bom xong thì reset think time
+                    // để nó đổi sang mode chạy thoát ngay
                     bot.botNextThinkAt = 0L;
                 }
             }
@@ -1020,6 +1344,15 @@ public class GameRoomService {
         return changed;
     }
 
+    // =========================================================
+    // HÀM: detonateBombs
+    // Mục đích:
+    // - Xử lý nổ bom
+    // - bao gồm nổ dây chuyền
+    // - phá tường mềm
+    // - drop item
+    // - tạo explosion
+    // =========================================================
     private void detonateBombs(MatchInstance match, List<Bomb> expired, long now) {
         Queue<Bomb> queue = new ArrayDeque<>(expired);
         Set<String> detonatedIds = new HashSet<>();
@@ -1065,6 +1398,13 @@ public class GameRoomService {
         match.bombs.removeIf(b -> detonatedIds.contains(b.id));
     }
 
+    // =========================================================
+    // HÀM: applyDamageOrFreeze
+    // Mục đích:
+    // - Áp damage hoặc đóng băng cho player trúng explosion
+    // - ở DUO: đồng đội không gây damage / freeze cho nhau
+    // - sau đó kiểm tra thắng thua
+    // =========================================================
     private boolean applyDamageOrFreeze(MatchInstance match, long now) {
         boolean changed = false;
 
@@ -1079,15 +1419,24 @@ public class GameRoomService {
 
             outer:
             for (Explosion explosion : match.explosions) {
+                Player attacker = match.players.get(explosion.ownerId);
+
                 for (FlameCell cell : explosion.cells) {
-                    if (cell.row == victim.row && cell.col == victim.col) {
-                        if (explosion.freezeEffect) {
-                            hitFreezeBomb = true;
-                        } else {
-                            hitNormalBomb = true;
-                            killerId = explosion.ownerId;
-                            break outer;
-                        }
+                    if (cell.row != victim.row || cell.col != victim.col) {
+                        continue;
+                    }
+
+                    // DUO: đồng đội không gây hiệu ứng cho nhau
+                    if (isBlockedFriendlyFire(match, attacker, victim)) {
+                        continue;
+                    }
+
+                    if (explosion.freezeEffect) {
+                        hitFreezeBomb = true;
+                    } else {
+                        hitNormalBomb = true;
+                        killerId = explosion.ownerId;
+                        break outer;
                     }
                 }
             }
@@ -1135,6 +1484,17 @@ public class GameRoomService {
         return changed;
     }
 
+    // =========================================================
+    // HÀM: checkWinner
+    // Mục đích:
+    // - Kiểm tra trận đã có người / đội thắng chưa
+    //
+    // SOLO:
+    // - còn 1 player sống cuối cùng
+    //
+    // DUO:
+    // - còn 1 team sống cuối cùng
+    // =========================================================
     private void checkWinner(MatchInstance match) {
         if (match.gameOver) return;
         if (!match.gameStarted) return;
@@ -1144,22 +1504,64 @@ public class GameRoomService {
                 .filter(p -> p.lives > 0)
                 .toList();
 
-        if (alivePlayers.size() == 1) {
-            Player winner = alivePlayers.get(0);
+        Map<String, List<Player>> aliveTeams = new LinkedHashMap<>();
+        for (Player alive : alivePlayers) {
+            String teamId = alive.teamId == null || alive.teamId.isBlank()
+                    ? "P" + alive.id
+                    : alive.teamId;
+            aliveTeams.computeIfAbsent(teamId, key -> new ArrayList<>()).add(alive);
+        }
+
+        if (aliveTeams.size() == 1) {
+            Map.Entry<String, List<Player>> winnerEntry = aliveTeams.entrySet().iterator().next();
+            List<Player> winners = winnerEntry.getValue();
+            Player representativeWinner = winners.get(0);
+
             match.gameOver = true;
-            match.winnerId = winner.id;
-            match.resultMessage = winner.characterName + " thắng trận";
+            match.winnerId = representativeWinner.id;
+
+            if (MATCH_MODE_DUO.equals(match.matchMode)) {
+                match.resultMessage = getTeamDisplayName(winnerEntry.getKey()) + " thắng trận";
+            } else {
+                match.resultMessage = representativeWinner.characterName + " thắng trận";
+            }
+
             updateAllOvr(match);
             saveMatchHistoryIfNeeded(match);
-        } else if (alivePlayers.isEmpty()) {
+            finishLobbyRoomIfNeeded(match);
+        } else if (aliveTeams.isEmpty()) {
             match.gameOver = true;
             match.winnerId = null;
             match.resultMessage = "Hòa - không còn người sống";
             updateAllOvr(match);
             saveMatchHistoryIfNeeded(match);
+            finishLobbyRoomIfNeeded(match);
         }
     }
 
+    // =========================================================
+    // HÀM: finishLobbyRoomIfNeeded
+    // Mục đích:
+    // - Nếu đây là custom room thì xóa room khỏi lobby
+    // - Không tác động đến quick play
+    // =========================================================
+    private void finishLobbyRoomIfNeeded(MatchInstance match) {
+        if (match == null) return;
+        if (!match.customRoom) return;
+        if (match.matchKey == null || match.matchKey.isBlank()) return;
+
+        roomLobbyService.finishRoom(match.matchKey);
+    }
+
+    // =========================================================
+    // HÀM: saveMatchHistoryIfNeeded
+    // Mục đích:
+    // - Lưu lịch sử trận nếu chưa lưu
+    //
+    // Lưu ý DUO:
+    // - winnerId chỉ là 1 người đại diện của team thắng
+    // - flag winner trong từng player sẽ set theo teamId
+    // =========================================================
     private void saveMatchHistoryIfNeeded(MatchInstance match) {
         if (!match.gameOver || match.historySaved) return;
 
@@ -1173,9 +1575,16 @@ public class GameRoomService {
             List<MatchHistoryDocument.PlayerMatchResult> results = new ArrayList<>();
 
             Player winner = match.winnerId != null ? match.players.get(match.winnerId) : null;
+            String winningTeamId = winner != null ? winner.teamId : null;
+
             if (winner != null) {
                 history.setWinnerUserId(winner.userId);
-                history.setWinnerCharacterName(winner.characterName);
+
+                if (MATCH_MODE_DUO.equals(match.matchMode)) {
+                    history.setWinnerCharacterName(getTeamDisplayName(winningTeamId));
+                } else {
+                    history.setWinnerCharacterName(winner.characterName);
+                }
             }
 
             for (Player player : match.players.values()) {
@@ -1187,7 +1596,8 @@ public class GameRoomService {
                     participantUserIds.add(player.userId);
                 }
 
-                MatchHistoryDocument.PlayerMatchResult result = new MatchHistoryDocument.PlayerMatchResult();
+                MatchHistoryDocument.PlayerMatchResult result =
+                        new MatchHistoryDocument.PlayerMatchResult();
                 result.setUserId(player.userId);
                 result.setCharacterName(player.characterName);
                 result.setBombsPlaced(player.bombsPlaced);
@@ -1195,8 +1605,17 @@ public class GameRoomService {
                 result.setDeaths(player.deaths);
                 result.setLivesLeft(Math.max(player.lives, 0));
                 result.setOvr(player.ovr);
-                result.setWinner(Objects.equals(player.id, match.winnerId));
 
+                boolean isWinner;
+                if (winner == null) {
+                    isWinner = false;
+                } else if (MATCH_MODE_DUO.equals(match.matchMode)) {
+                    isWinner = Objects.equals(player.teamId, winningTeamId);
+                } else {
+                    isWinner = Objects.equals(player.id, match.winnerId);
+                }
+
+                result.setWinner(isWinner);
                 results.add(result);
             }
 
@@ -1210,6 +1629,12 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: respawn
+    // Mục đích:
+    // - Hồi sinh player về vị trí spawn
+    // - reset trạng thái tạm thời
+    // =========================================================
     private void respawn(Player player) {
         player.row = gameConfig.getSpawnRowForPlayer(player.id);
         player.col = gameConfig.getSpawnColForPlayer(player.id);
@@ -1223,6 +1648,11 @@ public class GameRoomService {
         player.nextBombFreeze = false;
     }
 
+    // =========================================================
+    // HÀM: pickupItem
+    // Mục đích:
+    // - Nhặt item tại ô đang đứng nếu còn chỗ trong inventory
+    // =========================================================
     private void pickupItem(MatchInstance match, Player player) {
         if (player.inventory.size() >= gameConfig.getPlayer().getMaxInventorySize()) return;
 
@@ -1240,6 +1670,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: maybeDropItem
+    // Mục đích:
+    // - Sau khi phá tường mềm thì có tỉ lệ rơi item
+    // =========================================================
     private void maybeDropItem(MatchInstance match, int row, int col) {
         boolean exists = match.items.stream().anyMatch(i -> i.row == row && i.col == col);
         if (exists) return;
@@ -1261,6 +1696,11 @@ public class GameRoomService {
         match.items.add(new Item(UUID.randomUUID().toString(), row, col, picked));
     }
 
+    // =========================================================
+    // HÀM: isWalkable
+    // Mục đích:
+    // - Kiểm tra ô có đi được không
+    // =========================================================
     private boolean isWalkable(MatchInstance match, int row, int col, int movingPlayerId) {
         if (!inBounds(row, col)) return false;
         if (match.board[row][col] != 0) return false;
@@ -1279,6 +1719,11 @@ public class GameRoomService {
         return true;
     }
 
+    // =========================================================
+    // HÀM: teleportPlayerToRandomSafeTile
+    // Mục đích:
+    // - Dịch chuyển player đến ô an toàn ngẫu nhiên
+    // =========================================================
     private void teleportPlayerToRandomSafeTile(MatchInstance match, Player player) {
         List<int[]> candidates = new ArrayList<>();
 
@@ -1301,6 +1746,11 @@ public class GameRoomService {
         player.col = target[1];
     }
 
+    // =========================================================
+    // HÀM: canTeleportTo
+    // Mục đích:
+    // - Kiểm tra ô có thể teleport đến được không
+    // =========================================================
     private boolean canTeleportTo(MatchInstance match, int row, int col, int movingPlayerId) {
         if (!inBounds(row, col)) return false;
         if (match.board[row][col] != 0) return false;
@@ -1319,6 +1769,13 @@ public class GameRoomService {
         return true;
     }
 
+    // =========================================================
+    // HÀM: buildExplosionCells
+    // Mục đích:
+    // - Chọn kiểu explosion:
+    //   + normal
+    //   + random
+    // =========================================================
     private List<FlameCell> buildExplosionCells(MatchInstance match, Bomb bomb) {
         if (bomb.randomPattern) {
             return buildRandomExplosionCells(match, bomb.row, bomb.col, bomb.range);
@@ -1326,6 +1783,11 @@ public class GameRoomService {
         return buildNormalExplosionCells(match, bomb.row, bomb.col, bomb.range);
     }
 
+    // =========================================================
+    // HÀM: buildNormalExplosionCells
+    // Mục đích:
+    // - Tạo flame cell theo hình nổ chuẩn 4 hướng
+    // =========================================================
     private List<FlameCell> buildNormalExplosionCells(MatchInstance match, int row, int col, int range) {
         List<FlameCell> cells = new ArrayList<>();
         cells.add(new FlameCell(row, col, "center"));
@@ -1363,6 +1825,11 @@ public class GameRoomService {
         return cells;
     }
 
+    // =========================================================
+    // HÀM: buildRandomExplosionCells
+    // Mục đích:
+    // - Tạo flame cell ngẫu nhiên cho random bomb
+    // =========================================================
     private List<FlameCell> buildRandomExplosionCells(MatchInstance match, int row, int col, int range) {
         List<FlameCell> cells = new ArrayList<>();
         Set<String> visited = new HashSet<>();
@@ -1406,11 +1873,23 @@ public class GameRoomService {
         return cells;
     }
 
+    // =========================================================
+    // HÀM: inBounds
+    // Mục đích:
+    // - Kiểm tra ô có nằm trong biên map không
+    // =========================================================
     private boolean inBounds(int row, int col) {
         return row >= 0 && row < gameConfig.getBoard().getRows()
                 && col >= 0 && col < gameConfig.getBoard().getCols();
     }
 
+    // =========================================================
+    // HÀM: createInitialBoard
+    // Mục đích:
+    // - Tạo map ban đầu
+    // - sinh hard wall / soft wall
+    // - giữ vùng spawn an toàn
+    // =========================================================
     private int[][] createInitialBoard() {
         int rows = gameConfig.getBoard().getRows();
         int cols = gameConfig.getBoard().getCols();
@@ -1470,14 +1949,19 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Reset players về trạng thái ban đầu
-    // Lưu ý: chỉ reset đúng số slot của trận hiện tại
+    // HÀM: resetPlayersOnly
+    // Mục đích:
+    // - Reset player về trạng thái đầu trận
+    // - chỉ reset đúng số slot của trận hiện tại
+    // - đồng thời gán lại team theo mode hiện tại
     // =========================================================
     private void resetPlayersOnly(MatchInstance match) {
         match.players.clear();
 
         for (int id = 1; id <= match.requiredPlayers; id++) {
-            match.players.put(id, createFreshPlayer(id));
+            Player freshPlayer = createFreshPlayer(id);
+            applyMatchModeToPlayer(match, freshPlayer);
+            match.players.put(id, freshPlayer);
         }
 
         for (Integer playerId : match.sessions.keySet()) {
@@ -1490,6 +1974,16 @@ public class GameRoomService {
         updateAllOvr(match);
     }
 
+    // =========================================================
+    // HÀM: resetMatch
+    // Mục đích:
+    // - Reset toàn bộ trận:
+    //   + board
+    //   + bombs
+    //   + explosions
+    //   + items
+    //   + trạng thái gameOver / waiting / countdown
+    // =========================================================
     private void resetMatch(MatchInstance match) {
         match.board = createInitialBoard();
         match.bombs.clear();
@@ -1512,6 +2006,11 @@ public class GameRoomService {
         resetPlayersOnly(match);
     }
 
+    // =========================================================
+    // HÀM: broadcastState
+    // Mục đích:
+    // - Gửi state hiện tại của trận cho toàn bộ session trong match
+    // =========================================================
     public synchronized void broadcastState(String matchKey) {
         MatchInstance match = matches.get(matchKey);
         if (match == null) return;
@@ -1529,7 +2028,8 @@ public class GameRoomService {
                 match.gameStarted,
                 getParticipantCount(match),
                 match.requiredPlayers,
-                match.countdownSeconds
+                match.countdownSeconds,
+                match.matchMode
         );
 
         String json;
@@ -1549,6 +2049,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: send
+    // Mục đích:
+    // - Gửi 1 websocket message đến 1 session
+    // =========================================================
     private void send(WebSocketSession session, ServerMessage message) {
         try {
             if (session != null && session.isOpen()) {
@@ -1558,6 +2063,11 @@ public class GameRoomService {
         }
     }
 
+    // =========================================================
+    // HÀM: copyBoard
+    // Mục đích:
+    // - Copy board để gửi ra ngoài
+    // =========================================================
     private int[][] copyBoard(MatchInstance match) {
         int rows = gameConfig.getBoard().getRows();
         int cols = gameConfig.getBoard().getCols();
@@ -1570,6 +2080,11 @@ public class GameRoomService {
         return copied;
     }
 
+    // =========================================================
+    // HÀM: copyPlayers
+    // Mục đích:
+    // - Copy player list để gửi ra ngoài
+    // =========================================================
     private List<Player> copyPlayers(MatchInstance match) {
         List<Player> list = new ArrayList<>();
 
@@ -1599,6 +2114,7 @@ public class GameRoomService {
             copy.characterName = p.characterName;
             copy.gender = p.gender;
             copy.avatarCode = p.avatarCode;
+            copy.teamId = p.teamId;
 
             copy.bot = p.bot;
             copy.ready = p.ready;
@@ -1613,6 +2129,11 @@ public class GameRoomService {
         return list;
     }
 
+    // =========================================================
+    // HÀM: copyBombs
+    // Mục đích:
+    // - Copy bomb list để gửi ra ngoài
+    // =========================================================
     private List<Bomb> copyBombs(MatchInstance match) {
         List<Bomb> list = new ArrayList<>();
 
@@ -1632,6 +2153,11 @@ public class GameRoomService {
         return list;
     }
 
+    // =========================================================
+    // HÀM: copyExplosions
+    // Mục đích:
+    // - Copy explosion list để gửi ra ngoài
+    // =========================================================
     private List<Explosion> copyExplosions(MatchInstance match) {
         List<Explosion> list = new ArrayList<>();
 
@@ -1657,6 +2183,11 @@ public class GameRoomService {
         return list;
     }
 
+    // =========================================================
+    // HÀM: copyItems
+    // Mục đích:
+    // - Copy item list để gửi ra ngoài
+    // =========================================================
     private List<Item> copyItems(MatchInstance match) {
         List<Item> list = new ArrayList<>();
 
@@ -1668,7 +2199,9 @@ public class GameRoomService {
     }
 
     // =========================================================
-    // Trạng thái nội bộ của 1 trận
+    // CLASS PHỤ: MatchInstance
+    // Mục đích:
+    // - Lưu trạng thái nội bộ của 1 trận
     // =========================================================
     private static class MatchInstance {
         String matchKey;
@@ -1682,6 +2215,9 @@ public class GameRoomService {
 
         boolean customRoom;
         Integer hostPlayerId;
+
+        // SOLO hoặc DUO
+        String matchMode = MATCH_MODE_SOLO;
 
         Map<Integer, WebSocketSession> sessions = new ConcurrentHashMap<>();
         Map<Integer, Player> players = new HashMap<>();

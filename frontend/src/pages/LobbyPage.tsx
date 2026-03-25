@@ -226,9 +226,9 @@ export default function LobbyPage() {
                 titleColor="#86efac"
                 background="linear-gradient(135deg, rgba(34,197,94,0.12), rgba(255,255,255,0.03))"
                 border="1px solid rgba(34,197,94,0.18)"
-                text="Tìm trận nhanh để vào game ngay với cấu hình có sẵn của hệ thống."
-                actionText="Chơi ngay"
-                onClick={() => navigate("/game")}
+                text="Chọn chơi đơn hoặc chơi đôi trước khi vào trận nhanh."
+                actionText="Chọn kiểu chơi"
+                onClick={() => navigate("/quick-play")}
               />
 
               <ModeCard

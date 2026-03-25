@@ -5,6 +5,7 @@ import { GAME_CONFIG, getDefaultRoomSize } from "../config/gameConfig";
 import Card from "../components/common/Card";
 import Input from "../components/common/Input";
 import { useRoomLobbySocket } from "../hooks/useRoomLobbySocket";
+import type { MatchMode } from "../game/roomWsTypes";
 
 const badgeStyle: React.CSSProperties = {
   display: "inline-flex",
@@ -18,6 +19,76 @@ const badgeStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 700,
 };
+
+/**
+ * Tính text + màu trạng thái phòng
+ *
+ * WAITING:
+ * - thiếu người  -> "Thiếu X người"
+ * - đủ người     -> "Đã đủ người"
+ *
+ * PLAYING:
+ * - đang chơi    -> "Đang chơi"
+ */
+function getRoomStatusMeta(room: {
+  playerCount: number;
+  maxPlayers: number;
+  status: string;
+}) {
+  const missingPlayers = Math.max(0, room.maxPlayers - room.playerCount);
+  const full = room.playerCount >= room.maxPlayers;
+  const playing = room.status === "PLAYING";
+
+  if (playing) {
+    return {
+      text: "Đang chơi",
+      background: "rgba(245,158,11,0.12)",
+      color: "#fcd34d",
+      border: "1px solid rgba(245,158,11,0.22)",
+    };
+  }
+
+  if (full) {
+    return {
+      text: "Đã đủ người",
+      background: "rgba(34,197,94,0.10)",
+      color: "#86efac",
+      border: "1px solid rgba(34,197,94,0.20)",
+    };
+  }
+
+  return {
+    text: `Thiếu ${missingPlayers} người`,
+    background: "rgba(59,130,246,0.12)",
+    color: "#93c5fd",
+    border: "1px solid rgba(59,130,246,0.22)",
+  };
+}
+
+/**
+ * Meta để hiện nhãn mode
+ */
+function getMatchModeMeta(matchMode: MatchMode) {
+  if (matchMode === "DUO") {
+    return {
+      label: "Chơi đôi 2v2",
+      shortLabel: "DUO",
+      description: "4 người chia 2 đội, mỗi đội 2 người",
+      background: "rgba(59,130,246,0.12)",
+      color: "#93c5fd",
+      border: "1px solid rgba(59,130,246,0.22)",
+    };
+  }
+
+  return {
+    label: "Chơi đơn",
+    shortLabel: "SOLO",
+    description: "4 người đánh tự do, ai sống cuối cùng thắng",
+    background: "rgba(34,197,94,0.10)",
+    color: "#86efac",
+    border: "1px solid rgba(34,197,94,0.20)",
+  };
+}
 
 export default function RoomLobbyPage() {
   const navigate = useNavigate();
@@ -45,10 +116,15 @@ export default function RoomLobbyPage() {
   const [maxPlayers, setMaxPlayers] = useState<number>(getDefaultRoomSize());
   const [isPrivate, setIsPrivate] = useState(false);
 
-  // =====================================================
-  // Khi chủ phòng bấm Chơi, truyền roomCode / maxPlayers /
-  // humanCount / botCount sang màn game
-  // =====================================================
+  // ===== mode mới của phòng =====
+  const [matchMode, setMatchMode] = useState<MatchMode>("SOLO");
+
+  /**
+   * Khi chủ phòng bấm Chơi:
+   * - backend gửi room_started
+   * - frontend chuyển sang màn game
+   * - truyền thêm matchMode để game socket biết trận này SOLO hay DUO
+   */
   useEffect(() => {
     if (!lastStartedRoomInfo) return;
 
@@ -57,15 +133,24 @@ export default function RoomLobbyPage() {
         `&roomCode=${encodeURIComponent(lastStartedRoomInfo.roomCode)}` +
         `&requiredPlayers=${lastStartedRoomInfo.maxPlayers}` +
         `&humanCount=${lastStartedRoomInfo.humanCount}` +
-        `&botCount=${lastStartedRoomInfo.botCount}`,
+        `&botCount=${lastStartedRoomInfo.botCount}` +
+        `&matchMode=${lastStartedRoomInfo.matchMode}`,
       { replace: true },
     );
   }, [lastStartedRoomInfo, navigate]);
 
+  /**
+   * Lọc phòng theo từ khóa:
+   * - tên phòng
+   * - mã phòng
+   * - tên chủ phòng
+   */
   const filteredRooms = useMemo(() => {
     const keyword = search.trim().toLowerCase();
+
     return rooms.filter((room) => {
       if (!keyword) return true;
+
       return (
         room.roomName.toLowerCase().includes(keyword) ||
         room.roomCode.toLowerCase().includes(keyword) ||
@@ -74,19 +159,53 @@ export default function RoomLobbyPage() {
     });
   }, [rooms, search]);
 
+  /**
+   * Tạo phòng
+   *
+   * - SOLO: dùng maxPlayers người chơi như đang chọn
+   * - DUO : luôn ép 4 người vì là 2v2
+   */
   const handleCreateRoom = () => {
-    createRoom(roomName, maxPlayers, isPrivate);
+    const finalMaxPlayers = matchMode === "DUO" ? 4 : maxPlayers;
+
+    createRoom(roomName, finalMaxPlayers, isPrivate, matchMode);
+
     setShowCreateModal(false);
     setRoomName("");
     setMaxPlayers(getDefaultRoomSize());
     setIsPrivate(false);
+    setMatchMode("SOLO");
   };
 
+  /**
+   * Điều kiện host có thể thêm bot
+   */
   const canAddBot =
     !!currentRoom &&
     currentRoom.isHost &&
     currentRoom.playerCount < currentRoom.maxPlayers &&
     currentRoom.status !== "PLAYING";
+
+  /**
+   * Trạng thái phòng hiện tại
+   */
+  const currentRoomStatusMeta = currentRoom
+    ? getRoomStatusMeta({
+        playerCount: currentRoom.playerCount,
+        maxPlayers: currentRoom.maxPlayers,
+        status: currentRoom.status,
+      })
+    : null;
+
+  const currentRoomMissingPlayers = currentRoom
+    ? Math.max(0, currentRoom.maxPlayers - currentRoom.playerCount)
+    : 0;
+
+  const currentRoomModeMeta = currentRoom
+    ? getMatchModeMeta(currentRoom.matchMode ?? "SOLO")
+    : null;
+
+  const selectedModeMeta = getMatchModeMeta(matchMode);
 
   return (
     <div
@@ -98,6 +217,9 @@ export default function RoomLobbyPage() {
       }}
     >
       <div style={{ maxWidth: 1380, margin: "0 auto" }}>
+        {/* =====================================================
+            HEADER TRANG
+        ===================================================== */}
         <Card style={{ marginBottom: 18, padding: 28 }}>
           <div
             style={{
@@ -170,6 +292,9 @@ export default function RoomLobbyPage() {
             </div>
           </div>
 
+          {/* =====================================================
+              TÌM PHÒNG / NHẬP MÃ PHÒNG
+          ===================================================== */}
           <div
             style={{
               marginTop: 20,
@@ -202,6 +327,9 @@ export default function RoomLobbyPage() {
             </div>
           </div>
 
+          {/* =====================================================
+              TRẠNG THÁI KẾT NỐI SOCKET
+          ===================================================== */}
           <div
             style={{
               marginTop: 16,
@@ -228,6 +356,9 @@ export default function RoomLobbyPage() {
           </div>
         </Card>
 
+        {/* =====================================================
+            PHÒNG HIỆN TẠI
+        ===================================================== */}
         {currentRoom && (
           <Card
             style={{
@@ -257,30 +388,65 @@ export default function RoomLobbyPage() {
                 >
                   PHÒNG HIỆN TẠI
                 </div>
+
                 <h3 style={{ margin: 0, color: "#fff", fontSize: 28 }}>
                   {currentRoom.roomName}
                 </h3>
-              </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <span style={badgeStyle}>Mã: {currentRoom.roomCode}</span>
-                <span style={badgeStyle}>
-                  {currentRoom.playerCount}/{currentRoom.maxPlayers}
-                </span>
-                <span
+                <div
                   style={{
-                    ...badgeStyle,
-                    background: currentRoom.isHost
-                      ? "rgba(34,197,94,0.12)"
-                      : "rgba(255,255,255,0.06)",
-                    color: currentRoom.isHost ? "#86efac" : "#e2e8f0",
+                    marginTop: 10,
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
                   }}
                 >
-                  {currentRoom.isHost ? "👑 Chủ phòng" : "🎯 Thành viên"}
-                </span>
+                  <span style={badgeStyle}>Mã: {currentRoom.roomCode}</span>
+
+                  <span style={badgeStyle}>
+                    {currentRoom.playerCount}/{currentRoom.maxPlayers}
+                  </span>
+
+                  <span
+                    style={{
+                      ...badgeStyle,
+                      background: currentRoomStatusMeta?.background,
+                      color: currentRoomStatusMeta?.color,
+                      border: currentRoomStatusMeta?.border,
+                    }}
+                  >
+                    {currentRoomStatusMeta?.text}
+                  </span>
+
+                  <span
+                    style={{
+                      ...badgeStyle,
+                      background: currentRoomModeMeta?.background,
+                      color: currentRoomModeMeta?.color,
+                      border: currentRoomModeMeta?.border,
+                    }}
+                  >
+                    {currentRoomModeMeta?.label}
+                  </span>
+
+                  <span
+                    style={{
+                      ...badgeStyle,
+                      background: currentRoom.isHost
+                        ? "rgba(34,197,94,0.12)"
+                        : "rgba(255,255,255,0.06)",
+                      color: currentRoom.isHost ? "#86efac" : "#e2e8f0",
+                    }}
+                  >
+                    {currentRoom.isHost ? "👑 Chủ phòng" : "🎯 Thành viên"}
+                  </span>
+                </div>
               </div>
             </div>
 
+            {/* =====================================================
+                DANH SÁCH THÀNH VIÊN TRONG PHÒNG
+            ===================================================== */}
             <div
               style={{
                 display: "grid",
@@ -291,6 +457,7 @@ export default function RoomLobbyPage() {
             >
               {currentRoom.members.map((member) => {
                 const isBot = Boolean(member.bot);
+
                 const canRemoveThisBot =
                   currentRoom.isHost &&
                   isBot &&
@@ -392,6 +559,9 @@ export default function RoomLobbyPage() {
               })}
             </div>
 
+            {/* =====================================================
+                NÚT HÀNH ĐỘNG
+            ===================================================== */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {currentRoom.isHost && (
                 <>
@@ -430,23 +600,84 @@ export default function RoomLobbyPage() {
               </Button>
             </div>
 
-            {currentRoom.isHost &&
-              currentRoom.playerCount < currentRoom.maxPlayers && (
+            {/* =====================================================
+                GỢI Ý / TRẠNG THÁI PHÒNG
+            ===================================================== */}
+            {currentRoom.status === "WAITING" &&
+              currentRoom.isHost &&
+              currentRoomMissingPlayers > 0 && (
                 <div
-                  style={{ marginTop: 12, color: "#cbd5e1", lineHeight: 1.6 }}
+                  style={{
+                    marginTop: 12,
+                    color: "#cbd5e1",
+                    lineHeight: 1.6,
+                  }}
                 >
-                  Chủ phòng có thể thêm bot để đủ người nhanh hơn.
+                  Phòng còn thiếu {currentRoomMissingPlayers} người. Chủ phòng
+                  có thể thêm bot để đủ người nhanh hơn.
                 </div>
               )}
 
-            {!currentRoom.canStart && currentRoom.isHost && (
-              <div style={{ marginTop: 12, color: "#fbbf24", lineHeight: 1.6 }}>
-                Cần đủ {currentRoom.maxPlayers} người để chủ phòng bấm Chơi.
+            {currentRoom.status === "WAITING" &&
+              currentRoom.isHost &&
+              !currentRoom.canStart && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    color: "#fbbf24",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Cần đủ {currentRoom.maxPlayers} người để chủ phòng bấm Chơi.
+                </div>
+              )}
+
+            {currentRoom.status === "WAITING" &&
+              currentRoom.playerCount === currentRoom.maxPlayers && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    color: "#86efac",
+                    lineHeight: 1.6,
+                    fontWeight: 700,
+                  }}
+                >
+                  Phòng đã đủ người, có thể bắt đầu trận đấu.
+                </div>
+              )}
+
+            {currentRoom.status === "WAITING" &&
+              currentRoom.matchMode === "DUO" && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    color: "#93c5fd",
+                    lineHeight: 1.6,
+                    fontWeight: 700,
+                  }}
+                >
+                  Chế độ chơi đôi: trận sẽ chạy theo luật 2v2.
+                </div>
+              )}
+
+            {currentRoom.status === "PLAYING" && (
+              <div
+                style={{
+                  marginTop: 12,
+                  color: "#fcd34d",
+                  lineHeight: 1.6,
+                  fontWeight: 700,
+                }}
+              >
+                Phòng đang trong trận đấu.
               </div>
             )}
           </Card>
         )}
 
+        {/* =====================================================
+            DANH SÁCH PHÒNG
+        ===================================================== */}
         <Card>
           <div
             style={{
@@ -494,6 +725,18 @@ export default function RoomLobbyPage() {
               {filteredRooms.map((room) => {
                 const full = room.playerCount >= room.maxPlayers;
                 const playing = room.status === "PLAYING";
+                const statusMeta = getRoomStatusMeta({
+                  playerCount: room.playerCount,
+                  maxPlayers: room.maxPlayers,
+                  status: room.status,
+                });
+
+                const roomModeMeta = getMatchModeMeta(room.matchMode ?? "SOLO");
+
+                const missingPlayers = Math.max(
+                  0,
+                  room.maxPlayers - room.playerCount,
+                );
 
                 return (
                   <button
@@ -521,6 +764,7 @@ export default function RoomLobbyPage() {
                           : "0 10px 24px rgba(37,99,235,0.14)",
                     }}
                   >
+                    {/* Tên phòng + mã phòng */}
                     <div
                       style={{
                         display: "flex",
@@ -551,6 +795,7 @@ export default function RoomLobbyPage() {
                       </span>
                     </div>
 
+                    {/* Thông tin phòng */}
                     <div
                       style={{
                         color: "#94a3b8",
@@ -562,25 +807,48 @@ export default function RoomLobbyPage() {
                       <div>
                         Người chơi: {room.playerCount}/{room.maxPlayers}
                       </div>
+                      <div>Chế độ: {roomModeMeta.label}</div>
+
+                      {!playing && missingPlayers > 0 && (
+                        <div>Còn thiếu: {missingPlayers} người</div>
+                      )}
+
+                      {!playing && missingPlayers === 0 && (
+                        <div>Trạng thái: Đã đủ người</div>
+                      )}
+
+                      {playing && <div>Trạng thái: Đang trong trận</div>}
                     </div>
 
-                    <div style={{ marginTop: 14 }}>
+                    {/* Badge trạng thái */}
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <span
                         style={{
                           ...badgeStyle,
-                          background:
-                            room.status === "WAITING"
-                              ? "rgba(34,197,94,0.10)"
-                              : "rgba(245,158,11,0.12)",
-                          color:
-                            room.status === "WAITING" ? "#86efac" : "#fcd34d",
+                          background: statusMeta.background,
+                          color: statusMeta.color,
+                          border: statusMeta.border,
                         }}
                       >
-                        {playing
-                          ? "Đang chơi"
-                          : full
-                            ? "Đã đầy"
-                            : "Có thể tham gia"}
+                        {statusMeta.text}
+                      </span>
+
+                      <span
+                        style={{
+                          ...badgeStyle,
+                          background: roomModeMeta.background,
+                          color: roomModeMeta.color,
+                          border: roomModeMeta.border,
+                        }}
+                      >
+                        {roomModeMeta.shortLabel}
                       </span>
                     </div>
                   </button>
@@ -591,6 +859,9 @@ export default function RoomLobbyPage() {
         </Card>
       </div>
 
+      {/* =====================================================
+          MODAL TẠO PHÒNG
+      ===================================================== */}
       {showCreateModal && (
         <div
           style={{
@@ -604,7 +875,7 @@ export default function RoomLobbyPage() {
             zIndex: 60,
           }}
         >
-          <div style={{ width: 520, maxWidth: "100%" }}>
+          <div style={{ width: 560, maxWidth: "100%" }}>
             <Card
               style={{
                 padding: 24,
@@ -632,6 +903,7 @@ export default function RoomLobbyPage() {
                   >
                     CREATE ROOM
                   </div>
+
                   <h3 style={{ margin: 0, color: "#fff", fontSize: 28 }}>
                     Tạo phòng mới
                   </h3>
@@ -655,6 +927,64 @@ export default function RoomLobbyPage() {
                 placeholder="Ví dụ: Phòng của Hải"
               />
 
+              {/* ===== chọn mode ===== */}
+              <div style={{ marginBottom: 14 }}>
+                <div
+                  style={{
+                    marginBottom: 10,
+                    fontWeight: 800,
+                    color: "#e2e8f0",
+                    fontSize: 14,
+                  }}
+                >
+                  Kiểu trận
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <ModeSelectCard
+                    active={matchMode === "SOLO"}
+                    title="Chơi đơn"
+                    description="4 người đánh tự do, ai sống cuối cùng thắng."
+                    meta={getMatchModeMeta("SOLO")}
+                    onClick={() => setMatchMode("SOLO")}
+                  />
+
+                  <ModeSelectCard
+                    active={matchMode === "DUO"}
+                    title="Chơi đôi"
+                    description="2 đội, mỗi đội 2 người. Trận này luôn dùng 4 người."
+                    meta={getMatchModeMeta("DUO")}
+                    onClick={() => {
+                      setMatchMode("DUO");
+                      setMaxPlayers(4);
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 10,
+                    color: "#94a3b8",
+                    fontSize: 13,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  Đã chọn:{" "}
+                  <span
+                    style={{ color: selectedModeMeta.color, fontWeight: 800 }}
+                  >
+                    {selectedModeMeta.label}
+                  </span>{" "}
+                  • {selectedModeMeta.description}
+                </div>
+              </div>
+
               <label style={{ display: "block", marginBottom: 14 }}>
                 <div
                   style={{
@@ -666,25 +996,48 @@ export default function RoomLobbyPage() {
                 >
                   Số người tối đa
                 </div>
+
                 <select
-                  value={maxPlayers}
+                  value={matchMode === "DUO" ? 4 : maxPlayers}
                   onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                  disabled={matchMode === "DUO"}
                   style={{
                     width: "100%",
                     padding: "13px 14px",
                     borderRadius: 16,
                     border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.05)",
+                    background:
+                      matchMode === "DUO"
+                        ? "rgba(148,163,184,0.12)"
+                        : "rgba(255,255,255,0.05)",
                     color: "#fff",
                     outline: "none",
+                    cursor: matchMode === "DUO" ? "not-allowed" : "pointer",
+                    opacity: matchMode === "DUO" ? 0.85 : 1,
                   }}
                 >
-                  {GAME_CONFIG.room.allowedRoomSizes.map((size) => (
+                  {(matchMode === "DUO"
+                    ? [4]
+                    : GAME_CONFIG.room.allowedRoomSizes
+                  ).map((size) => (
                     <option key={size} value={size} style={{ color: "#000" }}>
                       {size} người
                     </option>
                   ))}
                 </select>
+
+                {matchMode === "DUO" && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      color: "#93c5fd",
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    Chế độ chơi đôi được cố định 4 người để chạy đúng luật 2v2.
+                  </div>
+                )}
               </label>
 
               <label
@@ -733,5 +1086,64 @@ export default function RoomLobbyPage() {
         </div>
       )}
     </div>
+  );
+}
+
+type ModeSelectCardProps = {
+  active: boolean;
+  title: string;
+  description: string;
+  meta: ReturnType<typeof getMatchModeMeta>;
+  onClick: () => void;
+};
+
+function ModeSelectCard({
+  active,
+  title,
+  description,
+  meta,
+  onClick,
+}: ModeSelectCardProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        textAlign: "left",
+        padding: 16,
+        borderRadius: 18,
+        border: active
+          ? `1px solid ${meta.color}`
+          : "1px solid rgba(255,255,255,0.08)",
+        background: active ? meta.background : "rgba(255,255,255,0.04)",
+        color: "#fff",
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+      }}
+    >
+      <div
+        style={{
+          display: "inline-flex",
+          padding: "6px 10px",
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 800,
+          background: meta.background,
+          color: meta.color,
+          border: meta.border,
+          marginBottom: 10,
+        }}
+      >
+        {meta.shortLabel}
+      </div>
+
+      <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
+        {title}
+      </div>
+
+      <div style={{ color: "#cbd5e1", lineHeight: 1.7, fontSize: 14 }}>
+        {description}
+      </div>
+    </button>
   );
 }

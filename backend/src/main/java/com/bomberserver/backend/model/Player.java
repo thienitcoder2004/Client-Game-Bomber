@@ -32,6 +32,11 @@ public class Player {
     public String gender;
     public String avatarCode;
 
+    // ===== TEAM =====
+    // SOLO: mỗi người là 1 team riêng
+    // DUO: 2 người có thể cùng 1 team
+    public String teamId;
+
     // ===== BOT =====
     public boolean bot;
     public boolean ready;
@@ -72,6 +77,9 @@ public class Player {
         this.characterName = "Player " + id;
         this.gender = "";
         this.avatarCode = "";
+
+        // mặc định nếu chưa gán theo mode thì coi như team riêng
+        this.teamId = "P" + id;
 
         this.bot = false;
         this.ready = false;

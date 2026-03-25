@@ -2,6 +2,9 @@
 // Kiểu dữ liệu cho socket phòng riêng
 // ===============================
 
+// Kiểu trận trong phòng
+export type MatchMode = "SOLO" | "DUO";
+
 // 1 thành viên trong phòng
 export type RoomMember = {
   clientId: string;
@@ -20,6 +23,12 @@ export type RoomSummary = {
   playerCount: number;
   maxPlayers: number;
   status: "WAITING" | "PLAYING";
+
+  // SOLO hoặc DUO
+  matchMode?: MatchMode;
+
+  // backend có gửi nhưng trước đây type chưa khai báo
+  isPrivate?: boolean;
 };
 
 // Trạng thái chi tiết của phòng hiện tại
@@ -32,6 +41,13 @@ export type CurrentRoomState = {
   isHost: boolean;
   canStart: boolean;
   members: RoomMember[];
+
+  // backend hiện cũng có thể gửi thêm
+  hostName?: string;
+  isPrivate?: boolean;
+
+  // SOLO hoặc DUO
+  matchMode: MatchMode;
 };
 
 // Dữ liệu khi chủ phòng bấm Chơi
@@ -40,6 +56,9 @@ export type RoomStartedInfo = {
   maxPlayers: number;
   humanCount: number;
   botCount: number;
+
+  // SOLO hoặc DUO
+  matchMode: MatchMode;
 };
 
 export type RoomsMessage = {
@@ -89,6 +108,9 @@ export type CreateRoomClientMessage = {
   roomName: string;
   maxPlayers: number;
   isPrivate: boolean;
+
+  // kiểu trận của phòng
+  matchMode: MatchMode;
 };
 
 export type JoinRoomClientMessage = {
