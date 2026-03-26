@@ -6,28 +6,85 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
-// Lưu mã OTP quên mật khẩu gửi qua email.
-// expiresAt có TTL index nên Mongo sẽ tự xóa record hết hạn.
+/**
+ * Document lưu mã OTP dùng cho chức năng quên mật khẩu.
+ *
+ * Collection trong MongoDB:
+ * password_reset_otps
+ *
+ * Mỗi document đại diện cho 1 lần tạo OTP reset password.
+ */
 @Document("password_reset_otps")
 public class PasswordResetOtpDocument {
 
+    /**
+     * ID chính của document.
+     */
     @Id
     private String id;
 
+    /**
+     * ID người dùng yêu cầu reset mật khẩu.
+     */
     private String userId;
+
+    /**
+     * Email nhận OTP.
+     */
     private String email;
+
+    /**
+     * Mã OTP đã được hash trước khi lưu.
+     *
+     * Không nên lưu OTP thô để đảm bảo an toàn.
+     */
     private String otpCodeHash;
+
+    /**
+     * Đánh dấu OTP đã được dùng chưa.
+     *
+     * false = chưa dùng
+     * true  = đã dùng
+     */
     private Boolean used = false;
 
+    /**
+     * Thời điểm OTP hết hạn.
+     *
+     * Có TTL index nên khi hết hạn,
+     * MongoDB sẽ tự động xóa document này.
+     *
+     * expireAfterSeconds = 0 nghĩa là
+     * document sẽ hết hạn đúng tại thời điểm expiresAt.
+     */
     @Indexed(name = "password_reset_otp_expires_idx", expireAfterSeconds = 0)
     private Instant expiresAt;
 
+    /**
+     * Thời điểm tạo OTP.
+     */
     private Instant createdAt;
+
+    /**
+     * Thời điểm OTP được sử dụng.
+     * Chỉ có giá trị khi used = true.
+     */
     private Instant usedAt;
 
+    /**
+     * Constructor rỗng để Spring / Mongo mapping.
+     */
     public PasswordResetOtpDocument() {
     }
 
+    /**
+     * Constructor tạo OTP document mới.
+     *
+     * @param userId id người dùng
+     * @param email email reset mật khẩu
+     * @param otpCodeHash mã OTP đã hash
+     * @param expiresAt thời điểm hết hạn OTP
+     */
     public PasswordResetOtpDocument(String userId, String email, String otpCodeHash, Instant expiresAt) {
         this.userId = userId;
         this.email = email;

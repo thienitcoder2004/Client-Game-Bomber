@@ -4,16 +4,52 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
 
+/**
+ * Class dùng để đọc toàn bộ cấu hình gameplay từ file game-config.properties
+ * với prefix là "game".
+ *
+ * Ví dụ file cấu hình:
+ * game.board.rows=13
+ * game.player.start-lives=3
+ * game.match.default-required-players=4
+ *
+ * Mục đích:
+ * - Gom tất cả thông số game về 1 nơi
+ * - Dễ chỉnh gameplay mà không cần sửa logic code nhiều nơi
+ */
 @Component
 @ConfigurationProperties(prefix = "game")
 @PropertySource(value = "classpath:game-config.properties", encoding = "UTF-8")
 public class GameConfigProperties {
 
+    /**
+     * Nhóm cấu hình bản đồ.
+     */
     private final Board board = new Board();
+
+    /**
+     * Nhóm cấu hình mặc định cho người chơi.
+     */
     private final Player player = new Player();
+
+    /**
+     * Nhóm cấu hình cho trận đấu / phòng chơi.
+     */
     private final Match match = new Match();
+
+    /**
+     * Nhóm cấu hình thời gian trong game.
+     */
     private final Timing timing = new Timing();
+
+    /**
+     * Nhóm cấu hình tỉ lệ rơi item.
+     */
     private final Drop drop = new Drop();
+
+    /**
+     * Nhóm cấu hình vị trí spawn người chơi.
+     */
     private final Spawn spawn = new Spawn();
 
     public Board getBoard() {
@@ -41,7 +77,13 @@ public class GameConfigProperties {
     }
 
     /**
-     * Lấy cooldown di chuyển theo cấp tốc độ hiện tại.
+     * Lấy cooldown di chuyển dựa theo cấp tốc độ hiện tại.
+     *
+     * speedLevel càng cao thì cooldown càng thấp,
+     * nghĩa là nhân vật di chuyển càng nhanh.
+     *
+     * @param speedLevel cấp tốc độ hiện tại của người chơi
+     * @return thời gian chờ giữa 2 lần di chuyển (ms)
      */
     public long getMoveCooldownForSpeedLevel(int speedLevel) {
         return switch (speedLevel) {
@@ -54,7 +96,16 @@ public class GameConfigProperties {
     }
 
     /**
-     * Lấy hàng spawn theo player id.
+     * Lấy hàng spawn dựa theo player id.
+     *
+     * Ví dụ:
+     * - player 1 spawn góc trên trái
+     * - player 2 spawn góc trên phải
+     * - player 3 spawn góc dưới trái
+     * - player 4 spawn góc dưới phải
+     *
+     * @param playerId id người chơi
+     * @return row spawn tương ứng
      */
     public int getSpawnRowForPlayer(int playerId) {
         return switch (playerId) {
@@ -67,7 +118,10 @@ public class GameConfigProperties {
     }
 
     /**
-     * Lấy cột spawn theo player id.
+     * Lấy cột spawn dựa theo player id.
+     *
+     * @param playerId id người chơi
+     * @return col spawn tương ứng
      */
     public int getSpawnColForPlayer(int playerId) {
         return switch (playerId) {
@@ -79,9 +133,25 @@ public class GameConfigProperties {
         };
     }
 
+    /**
+     * Class con chứa cấu hình cho bản đồ.
+     */
     public static class Board {
+
+        /**
+         * Số hàng của map.
+         */
         private int rows = 13;
+
+        /**
+         * Số cột của map.
+         */
         private int cols = 15;
+
+        /**
+         * Tỉ lệ sinh tường mềm.
+         * Giá trị từ 0 đến 1.
+         */
         private double softWallRate = 0.42;
 
         public int getRows() {
@@ -109,16 +179,59 @@ public class GameConfigProperties {
         }
     }
 
+    /**
+     * Class con chứa cấu hình mặc định cho người chơi.
+     */
     public static class Player {
+
+        /**
+         * Số mạng ban đầu.
+         */
         private int startLives = 3;
+
+        /**
+         * Số bom tối đa ban đầu có thể đặt cùng lúc.
+         */
         private int startMaxBombs = 3;
+
+        /**
+         * Tầm nổ bom ban đầu.
+         */
         private int startBombRange = 1;
+
+        /**
+         * Cấp tốc độ di chuyển ban đầu.
+         */
         private int startSpeedLevel = 1;
+
+        /**
+         * Kích thước tối đa túi đồ / inventory.
+         */
         private int maxInventorySize = 5;
+
+        /**
+         * Số bom tối đa có thể nâng cấp tới.
+         */
         private int maxBombs = 5;
+
+        /**
+         * Tầm nổ tối đa có thể nâng cấp tới.
+         */
         private int maxBombRange = 5;
+
+        /**
+         * Cấp tốc độ tối đa có thể nâng cấp tới.
+         */
         private int maxSpeedLevel = 5;
+
+        /**
+         * Số mạng tối đa có thể đạt được.
+         */
         private int maxLives = 5;
+
+        /**
+         * Thời gian tồn tại khiên bảo vệ (ms).
+         */
         private long shieldDurationMs = 5000;
 
         public int getStartLives() {
@@ -202,11 +315,34 @@ public class GameConfigProperties {
         }
     }
 
+    /**
+     * Class con chứa cấu hình cho trận đấu.
+     */
     public static class Match {
+
+        /**
+         * Số người mặc định cần để bắt đầu trận.
+         */
         private int defaultRequiredPlayers = 4;
+
+        /**
+         * Số người tối thiểu cho phép.
+         */
         private int minRequiredPlayers = 2;
+
+        /**
+         * Số người tối đa cho phép.
+         */
         private int maxRequiredPlayers = 4;
+
+        /**
+         * Số giây đếm ngược trước khi bắt đầu.
+         */
         private int startCountdownSeconds = 3;
+
+        /**
+         * Chu kỳ cập nhật game loop của server (ms).
+         */
         private long tickRateMs = 100;
 
         public int getDefaultRequiredPlayers() {
@@ -250,12 +386,35 @@ public class GameConfigProperties {
         }
     }
 
+    /**
+     * Class con chứa toàn bộ thông số về thời gian trong game.
+     */
     public static class Timing {
+
+        /**
+         * Thời gian bom phát nổ sau khi đặt (ms).
+         */
         private long bombFuseMs = 1000;
+
+        /**
+         * Thời gian hiệu ứng nổ tồn tại (ms).
+         */
         private long explosionMs = 350;
+
+        /**
+         * Thời gian bất tử sau khi bị trúng đòn / respawn / hit (ms).
+         */
         private long invulnerableMs = 1400;
+
+        /**
+         * Thời gian đóng băng nếu trúng hiệu ứng freeze (ms).
+         */
         private long freezeDurationMs = 3000;
 
+        /**
+         * Cooldown di chuyển tương ứng từng cấp tốc độ.
+         * Số càng nhỏ thì đi càng nhanh.
+         */
         private long moveCooldownLevel1Ms = 160;
         private long moveCooldownLevel2Ms = 135;
         private long moveCooldownLevel3Ms = 110;
@@ -335,7 +494,15 @@ public class GameConfigProperties {
         }
     }
 
+    /**
+     * Class con chứa cấu hình tỉ lệ rơi item.
+     */
     public static class Drop {
+
+        /**
+         * Tỉ lệ rơi item khi phá block.
+         * 0.50 nghĩa là 50%.
+         */
         private double itemRate = 0.50;
 
         public double getItemRate() {
@@ -347,13 +514,32 @@ public class GameConfigProperties {
         }
     }
 
+    /**
+     * Class con chứa vị trí spawn cho từng người chơi.
+     */
     public static class Spawn {
+
+        /**
+         * Tọa độ spawn của player 1.
+         */
         private int p1Row = 1;
         private int p1Col = 1;
+
+        /**
+         * Tọa độ spawn của player 2.
+         */
         private int p2Row = 1;
         private int p2Col = 13;
+
+        /**
+         * Tọa độ spawn của player 3.
+         */
         private int p3Row = 11;
         private int p3Col = 1;
+
+        /**
+         * Tọa độ spawn của player 4.
+         */
         private int p4Row = 11;
         private int p4Col = 13;
 

@@ -6,24 +6,73 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+/**
+ * Document lưu mối quan hệ bạn bè giữa 2 user.
+ *
+ * Collection trong MongoDB:
+ * friends
+ *
+ * Class này lưu cả:
+ * - lời mời kết bạn đang chờ (PENDING)
+ * - quan hệ bạn bè đã chấp nhận (ACCEPTED)
+ */
 @Document("friends")
 @CompoundIndex(name = "uniq_friend_pair", def = "{ 'userAId': 1, 'userBId': 1 }", unique = true)
 public class FriendDocument {
 
+    /**
+     * ID chính của document.
+     */
     @Id
     private String id;
 
+    /**
+     * ID user thứ nhất trong cặp bạn bè.
+     *
+     * Thường sẽ lưu theo quy tắc cố định:
+     * userAId < userBId
+     * để tránh trùng cặp.
+     */
     private String userAId;
+
+    /**
+     * ID user thứ hai trong cặp bạn bè.
+     */
     private String userBId;
 
+    /**
+     * ID người đã gửi lời mời kết bạn.
+     */
     private String requesterId;
+
+    /**
+     * ID người nhận lời mời kết bạn.
+     */
     private String addresseeId;
 
-    // PENDING / ACCEPTED
+    /**
+     * Trạng thái quan hệ bạn bè.
+     *
+     * Ví dụ:
+     * - PENDING  : đang chờ chấp nhận
+     * - ACCEPTED : đã là bạn bè
+     */
     private String status;
 
+    /**
+     * Thời điểm tạo lời mời / quan hệ.
+     */
     private Instant createdAt;
+
+    /**
+     * Thời điểm cập nhật gần nhất.
+     */
     private Instant updatedAt;
+
+    /**
+     * Thời điểm chấp nhận kết bạn.
+     * Chỉ có giá trị khi status = ACCEPTED.
+     */
     private Instant acceptedAt;
 
     public String getId() {

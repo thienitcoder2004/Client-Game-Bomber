@@ -7,34 +7,106 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-// Lịch sử trận đấu lưu vào DB sau khi trận kết thúc
+/**
+ * Document lưu lịch sử trận đấu sau khi trận game kết thúc.
+ *
+ * Collection trong MongoDB:
+ * match_histories
+ *
+ * Mỗi document tương ứng với 1 trận đấu.
+ */
 @Document("match_histories")
 public class MatchHistoryDocument {
 
+    /**
+     * ID chính của lịch sử trận đấu.
+     */
     @Id
     private String id;
 
+    /**
+     * Mã phòng của trận đấu.
+     */
     private String roomCode;
 
+    /**
+     * ID của người chiến thắng.
+     */
     private String winnerUserId;
+
+    /**
+     * Tên nhân vật của người chiến thắng.
+     */
     private String winnerCharacterName;
 
-    // Để query lịch sử của 1 user nhanh hơn
+    /**
+     * Danh sách toàn bộ user đã tham gia trận đấu.
+     *
+     * Mục đích:
+     * - hỗ trợ query nhanh lịch sử theo user
+     * - ví dụ tìm tất cả trận mà 1 user đã chơi
+     */
     private List<String> participantUserIds = new ArrayList<>();
 
+    /**
+     * Thời điểm trận đấu bắt đầu.
+     */
     private Instant startedAt;
+
+    /**
+     * Thời điểm trận đấu kết thúc.
+     */
     private Instant endedAt;
 
+    /**
+     * Danh sách kết quả chi tiết của từng người chơi trong trận.
+     */
     private List<PlayerMatchResult> players = new ArrayList<>();
 
+    /**
+     * Class con lưu kết quả của từng người chơi trong 1 trận.
+     */
     public static class PlayerMatchResult {
+
+        /**
+         * ID người chơi.
+         */
         private String userId;
+
+        /**
+         * Tên nhân vật hiển thị của người chơi.
+         */
         private String characterName;
+
+        /**
+         * Số bom đã đặt trong trận.
+         */
         private int bombsPlaced;
+
+        /**
+         * Số mạng hạ gục được.
+         */
         private int kills;
+
+        /**
+         * Số lần bị chết.
+         */
         private int deaths;
+
+        /**
+         * Số mạng còn lại khi kết thúc trận.
+         */
         private int livesLeft;
+
+        /**
+         * Điểm OVR tổng kết của người chơi.
+         * Đây là điểm tổng hợp để xếp hạng sau trận.
+         */
         private int ovr;
+
+        /**
+         * Đánh dấu người chơi này có phải người thắng không.
+         */
         private boolean winner;
 
         public PlayerMatchResult() {

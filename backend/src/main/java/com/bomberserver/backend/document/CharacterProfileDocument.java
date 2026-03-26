@@ -6,30 +6,86 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
-// Profile nhân vật gắn với user
+/**
+ * Document lưu hồ sơ nhân vật của người chơi.
+ *
+ * Collection trong MongoDB:
+ * character_profiles
+ *
+ * Mỗi user sẽ có đúng 1 profile nhân vật.
+ * Profile này dùng để lưu các thông tin hiển thị trong game như:
+ * - tên nhân vật
+ * - giới tính
+ * - mã avatar
+ */
 @Document("character_profiles")
 public class CharacterProfileDocument {
 
+    /**
+     * ID chính của document trong MongoDB.
+     */
     @Id
     private String id;
 
+    /**
+     * ID của user sở hữu profile này.
+     *
+     * Đặt unique = true để đảm bảo:
+     * 1 user chỉ có đúng 1 profile.
+     */
     @Indexed(unique = true)
     private String userId;
 
+    /**
+     * Tên nhân vật hiển thị trong game.
+     */
     private String characterName;
 
-    // MALE / FEMALE
+    /**
+     * Giới tính nhân vật.
+     *
+     * Quy ước hiện tại:
+     * - MALE
+     * - FEMALE
+     */
     private String gender;
 
-    // mã avatar để frontend biết dùng bộ ảnh nào
+    /**
+     * Mã avatar để frontend biết dùng bộ ảnh nào.
+     *
+     * Ví dụ:
+     * - male_01
+     * - female_01
+     */
     private String avatarCode;
 
+    /**
+     * Thời điểm tạo profile.
+     */
     private Instant createdAt;
+
+    /**
+     * Thời điểm cập nhật profile gần nhất.
+     */
     private Instant updatedAt;
 
+    /**
+     * Constructor rỗng để Spring / MongoDB mapping dữ liệu.
+     */
     public CharacterProfileDocument() {
     }
 
+    /**
+     * Constructor tạo profile mới theo userId.
+     *
+     * Khi mới tạo:
+     * - characterName rỗng
+     * - gender rỗng
+     * - avatarCode rỗng
+     * - createdAt / updatedAt là thời điểm hiện tại
+     *
+     * @param userId id người dùng
+     */
     public CharacterProfileDocument(String userId) {
         this.userId = userId;
         this.characterName = "";
@@ -39,6 +95,16 @@ public class CharacterProfileDocument {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Kiểm tra profile đã hoàn tất chưa.
+     *
+     * Điều kiện hoàn tất:
+     * - có characterName
+     * - có gender
+     * - có avatarCode
+     *
+     * @return true nếu profile đã đầy đủ, false nếu còn thiếu
+     */
     public boolean isProfileCompleted() {
         return characterName != null && !characterName.isBlank()
                 && gender != null && !gender.isBlank()

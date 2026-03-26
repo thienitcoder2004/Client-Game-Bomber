@@ -6,21 +6,69 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
+/**
+ * Document lưu từng tin nhắn chat giữa 2 người bạn.
+ *
+ * Collection trong MongoDB:
+ * friend_chat_messages
+ *
+ * Mỗi document tương ứng với 1 tin nhắn.
+ */
 @Document("friend_chat_messages")
 public class FriendChatMessageDocument {
 
+    /**
+     * ID chính của tin nhắn.
+     */
     @Id
     private String id;
 
+    /**
+     * Khóa hội thoại giữa 2 người dùng.
+     *
+     * Mục đích:
+     * - gom các tin nhắn của cùng 1 cuộc trò chuyện lại với nhau
+     * - hỗ trợ query lịch sử chat nhanh hơn
+     *
+     * Thường conversationKey sẽ được tạo theo kiểu cố định,
+     * ví dụ: user nhỏ hơn + "_" + user lớn hơn
+     * để tránh 2 chiều tạo ra 2 key khác nhau.
+     */
     @Indexed
     private String conversationKey;
 
+    /**
+     * ID người gửi tin nhắn.
+     */
     private String senderId;
+
+    /**
+     * ID người nhận tin nhắn.
+     */
     private String receiverId;
+
+    /**
+     * Nội dung tin nhắn.
+     */
     private String content;
+
+    /**
+     * Thời gian gửi tin nhắn.
+     */
     private Instant createdAt;
 
+    /**
+     * Đánh dấu tin nhắn đã bị thu hồi chưa.
+     *
+     * true  = đã thu hồi
+     * false = chưa thu hồi
+     */
     private boolean recalled;
+
+    /**
+     * Thời điểm thu hồi tin nhắn.
+     * Chỉ có giá trị khi recalled = true.
+     */
     private Instant recalledAt;
 
     public String getId() {

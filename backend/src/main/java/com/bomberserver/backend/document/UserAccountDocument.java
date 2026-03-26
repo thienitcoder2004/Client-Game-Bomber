@@ -6,29 +6,91 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
-// Collection lưu tài khoản người dùng
+/**
+ * Document lưu tài khoản người dùng.
+ *
+ * Collection trong MongoDB:
+ * users
+ *
+ * Đây là bảng chính để quản lý:
+ * - email
+ * - username
+ * - password đã hash
+ * - role
+ * - trạng thái active
+ */
 @Document("users")
 public class UserAccountDocument {
 
+    /**
+     * ID chính của tài khoản.
+     */
     @Id
     private String id;
 
+    /**
+     * Email của user.
+     *
+     * Đặt unique = true để không bị trùng email.
+     */
     @Indexed(unique = true)
     private String email;
 
+    /**
+     * Username của user.
+     *
+     * Đặt unique = true để không bị trùng username.
+     */
     @Indexed(unique = true)
     private String username;
 
+    /**
+     * Mật khẩu đã được hash.
+     *
+     * Không lưu password thô.
+     */
     private String passwordHash;
 
+    /**
+     * Vai trò của user.
+     *
+     * Ví dụ:
+     * - USER
+     * - ADMIN
+     */
     private String role = "USER";
+
+    /**
+     * Trạng thái hoạt động của tài khoản.
+     *
+     * true  = đang hoạt động
+     * false = bị khóa / vô hiệu hóa
+     */
     private Boolean active = true;
 
+    /**
+     * Thời điểm tạo tài khoản.
+     */
     private Instant createdAt;
 
+    /**
+     * Constructor rỗng để Spring / Mongo mapping.
+     */
     public UserAccountDocument() {
     }
 
+    /**
+     * Constructor tạo tài khoản mới.
+     *
+     * Mặc định:
+     * - role = USER
+     * - active = true
+     * - createdAt = hiện tại
+     *
+     * @param email email người dùng
+     * @param username tên đăng nhập
+     * @param passwordHash mật khẩu đã hash
+     */
     public UserAccountDocument(String email, String username, String passwordHash) {
         this.email = email;
         this.username = username;
